@@ -75,6 +75,34 @@
         .dt-touch-disabled,
         .touch-protected {
           touch-action: auto !important;
+          -webkit-overflow-scrolling: touch !important;
+        }
+        
+        /* Lock tab switching during scrolling */
+        body.is-scrolling #mobile-nav-bar {
+          pointer-events: none;
+        }
+        
+        /* When scrolling is released, delay re-enabling pointer events */
+        @keyframes restorePointerEvents {
+          0% { pointer-events: none; }
+          99% { pointer-events: none; }
+          100% { pointer-events: auto; }
+        }
+        
+        body:not(.is-scrolling) #mobile-nav-bar {
+          animation: restorePointerEvents 0.3s;
+        }
+        
+        /* Additional styles to isolate touch events */
+        .current-mobile-tab {
+          isolation: isolate;
+          z-index: 1;
+        }
+        
+        /* Prevent DataTables from hijacking touch inputs */
+        #mobile-nav-bar button {
+          touch-action: manipulation !important;
         }
         
         /* Styles for the active tab */
@@ -85,6 +113,9 @@
         /* Ensure the linked-shelves-container scrolls properly */
         #linked-shelves-container {
           -webkit-overflow-scrolling: touch;
+          max-height: 70vh;
+          isolation: isolate;
+          position: relative;
         }
       }
     </style>

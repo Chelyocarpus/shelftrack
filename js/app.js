@@ -1266,6 +1266,8 @@ const setupMobileNavigation = () => {
     
     // Remove any mobile-specific scroll restrictions
     document.body.classList.remove('has-mobile-nav');
+    document.querySelectorAll('.current-mobile-tab').forEach(el => 
+      el.classList.remove('current-mobile-tab'));
     
     return;
   }
@@ -1323,6 +1325,10 @@ const setupMobileNavigation = () => {
     };
   }
 
+  // Clear current-mobile-tab from all sections
+  document.querySelectorAll('.current-mobile-tab').forEach(el => 
+    el.classList.remove('current-mobile-tab'));
+
   // Hide all panels except table by default
   if (addPanel) addPanel.classList.add('hidden');
   if (groupsPanel) groupsPanel.classList.add('hidden');
@@ -1330,26 +1336,38 @@ const setupMobileNavigation = () => {
     tableSection.classList.remove('hidden');
     tableSection.style.overflow = 'visible';
     tableSection.style.maxHeight = '';
+    tableSection.classList.add('current-mobile-tab');
     const dataTable = tableSection.querySelector('.dataTables_wrapper');
     if (dataTable) {
       dataTable.style.overflow = 'visible';
     }
   }
 
-  // Button handlers
+  // Button handlers with improved touch event handling
   if (navBtns.table) {
-    navBtns.table.onclick = () => {
+    navBtns.table.onclick = (e) => {
+      // Prevent action if we're in scrolling mode
+      if (document.body.classList.contains('is-scrolling')) {
+        e.preventDefault();
+        return;
+      }
+
+      // Clear current-mobile-tab from all sections
+      document.querySelectorAll('.current-mobile-tab').forEach(el => 
+        el.classList.remove('current-mobile-tab'));
+        
       if (addPanel) addPanel.classList.add('hidden');
       if (groupsPanel) groupsPanel.classList.add('hidden');
       if (tableSection) {
         tableSection.classList.remove('hidden');
         tableSection.style.overflow = 'visible';
         tableSection.style.maxHeight = '';
+        tableSection.classList.add('current-mobile-tab');
         if (window.shelfDataTable) {
           setTimeout(() => window.shelfDataTable.columns.adjust(), 10);
         }
-        document.body.style.overflow = '';
       }
+      // Update button states
       navBtns.table.classList.add('bg-primary-600', 'text-white');
       navBtns.table.classList.remove('bg-primary-100', 'text-primary-700');
       navBtns.add.classList.remove('bg-primary-600', 'text-white');
@@ -1358,17 +1376,34 @@ const setupMobileNavigation = () => {
       navBtns.groups.classList.add('bg-primary-100', 'text-primary-700');
     };
   }
+  
   if (navBtns.add) {
-    navBtns.add.onclick = () => {
-      if (addPanel) addPanel.classList.remove('hidden');
+    navBtns.add.onclick = (e) => {
+      // Prevent action if we're in scrolling mode
+      if (document.body.classList.contains('is-scrolling')) {
+        e.preventDefault();
+        return;
+      }
+
+      // Clear current-mobile-tab from all sections
+      document.querySelectorAll('.current-mobile-tab').forEach(el => 
+        el.classList.remove('current-mobile-tab'));
+        
+      if (addPanel) {
+        addPanel.classList.remove('hidden');
+        addPanel.classList.add('current-mobile-tab');
+      }
       if (groupsPanel) groupsPanel.classList.add('hidden');
       if (tableSection) tableSection.classList.add('hidden');
+      
+      // Update button states
       navBtns.add.classList.add('bg-primary-600', 'text-white');
       navBtns.add.classList.remove('bg-primary-100', 'text-primary-700');
       navBtns.table.classList.remove('bg-primary-600', 'text-white');
       navBtns.table.classList.add('bg-primary-100', 'text-primary-700');
       navBtns.groups.classList.remove('bg-primary-600', 'text-white');
       navBtns.groups.classList.add('bg-primary-100', 'text-primary-700');
+      
       // Focus first input
       const firstInput = addPanel ? addPanel.querySelector('input') : null;
       if (firstInput) {
@@ -1376,16 +1411,30 @@ const setupMobileNavigation = () => {
       }
     };
   }
+  
   if (navBtns.groups) {
-    navBtns.groups.onclick = () => {
+    navBtns.groups.onclick = (e) => {
+      // Prevent action if we're in scrolling mode
+      if (document.body.classList.contains('is-scrolling')) {
+        e.preventDefault();
+        return;
+      }
+
+      // Clear current-mobile-tab from all sections
+      document.querySelectorAll('.current-mobile-tab').forEach(el => 
+        el.classList.remove('current-mobile-tab'));
+        
       if (addPanel) addPanel.classList.add('hidden');
       if (groupsPanel) {
         groupsPanel.classList.remove('hidden');
+        groupsPanel.classList.add('current-mobile-tab');
         // Remove scroll and maxHeight so only the page scrolls
         groupsPanel.style.overflow = 'visible';
         groupsPanel.style.maxHeight = '';
       }
       if (tableSection) tableSection.classList.add('hidden');
+      
+      // Update button states
       navBtns.groups.classList.add('bg-primary-600', 'text-white');
       navBtns.groups.classList.remove('bg-primary-100', 'text-primary-700');
       navBtns.table.classList.remove('bg-primary-600', 'text-white');
@@ -1394,6 +1443,14 @@ const setupMobileNavigation = () => {
       navBtns.add.classList.add('bg-primary-100', 'text-primary-700');
     };
   }
+
+  // Add touch-specific attributes to all panels
+  [addPanel, groupsPanel, tableSection].forEach(panel => {
+    if (panel) {
+      panel.setAttribute('touch-action', 'auto');
+      panel.setAttribute('data-touch-protected', 'true');
+    }
+  });
 };
 
 // Enhance touch targets and input UX for mobile
@@ -1402,16 +1459,21 @@ const enhanceMobileUX = () => {
   document.querySelectorAll('button, select, input[type="submit"]').forEach(el => {
     el.classList.add('min-h-[44px]');
   });
+  
   // Date input: focus and blur for mobile
   document.querySelectorAll('input[type="date"]').forEach(input => {
-    input.addEventListener('touchstart', () => {
+    input.addEventListener('touchstart', (e) => {
+      // Prevent event from bubbling to DataTables
+      e.stopPropagation();
       input.blur();
       setTimeout(() => input.focus(), 10);
-    });
+    }, { passive: false });
+    
     input.addEventListener('change', () => {
       setTimeout(() => input.blur(), 300);
     });
   });
+  
   // Haptic feedback
   if ('vibrate' in navigator) {
     document.querySelectorAll('button').forEach(btn => {
@@ -1443,6 +1505,17 @@ const enhanceMobileUX = () => {
         }
       }, 100);
     }
+    
+    // Special handling for linked-shelves-container to ensure proper scrolling
+    const linkedShelvesContainer = document.getElementById('linked-shelves-container');
+    if (linkedShelvesContainer) {
+      linkedShelvesContainer.addEventListener('touchmove', (e) => {
+        // Mark as scrolling to prevent tab changes
+        document.body.classList.add('is-scrolling');
+        // Let the event propagate within this container only
+        e.stopPropagation();
+      }, { passive: false, capture: true });
+    }
   }
 };
 
@@ -1454,6 +1527,7 @@ const handleResponsive = () => {
 
 window.addEventListener('resize', debounce(handleResponsive, 200));
 window.addEventListener('orientationchange', () => setTimeout(handleResponsive, 200));
+
 
 // --- End Mobile UX Enhancements ---
 

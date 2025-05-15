@@ -28,6 +28,13 @@ const MobileInteractions = (() => {
   // Store the current active tab to prevent DataTables from capturing events in other tabs
   let activeTabId = 'mobile-table-btn'; // Default to table view
   
+  // Touch tracking variables to detect scrolling vs tapping
+  let touchStartY = 0;
+  let touchStartX = 0;
+  let isScrolling = false;
+  let scrollLockTimer = null;
+  let touchStartTime = 0;
+  
   // DOM elements that should block DataTables touch events
   const getScrollableSections = () => {
     return [
@@ -68,10 +75,75 @@ const MobileInteractions = (() => {
     protectScrollableSections();
     configureDataTables();
     
+    // Add global touch handlers for scroll detection
+    document.addEventListener('touchstart', handleGlobalTouchStart, { passive: true });
+    document.addEventListener('touchmove', handleGlobalTouchMove, { passive: true });
+    document.addEventListener('touchend', handleGlobalTouchEnd, { passive: true });
+    
     // Monitor tab changes to update active tab ID
     monitorTabChanges();
     
+    // Prevent DataTables from capturing touch events in non-table tabs
+    setupDataTablesOverride();
+    
     logger.info('Mobile interactions initialized');
+  };
+  
+  /**
+   * Handle global touch start event for scroll detection
+   */
+  const handleGlobalTouchStart = (e) => {
+    if (e.touches.length !== 1) return; // Only track single touches
+    
+    touchStartY = e.touches[0].clientY;
+    touchStartX = e.touches[0].clientX;
+    isScrolling = false;
+    touchStartTime = Date.now();
+    
+    // Clear any existing scroll lock timer
+    if (scrollLockTimer) {
+      clearTimeout(scrollLockTimer);
+      scrollLockTimer = null;
+    }
+  };
+  
+  /**
+   * Handle global touch move event for scroll detection
+   */
+  const handleGlobalTouchMove = (e) => {
+    if (e.touches.length !== 1 || !touchStartY) return;
+    
+    const touchY = e.touches[0].clientY;
+    const touchX = e.touches[0].clientX;
+    const deltaY = touchY - touchStartY;
+    const deltaX = touchX - touchStartX;
+    
+    // Detect if user is scrolling (more vertical movement than horizontal)
+    if (!isScrolling && Math.abs(deltaY) > 10 && Math.abs(deltaY) > Math.abs(deltaX)) {
+      isScrolling = true;
+      
+      // Lock tab switching during scroll
+      document.body.classList.add('is-scrolling');
+      logger.debug('Scroll detected, locking tab switching');
+    }
+  };
+  
+  /**
+   * Handle global touch end event for scroll detection
+   */
+  const handleGlobalTouchEnd = () => {
+    // Keep the scroll lock active briefly after touch end
+    // to prevent accidental tab switches at the end of scroll
+    if (isScrolling) {
+      scrollLockTimer = setTimeout(() => {
+        document.body.classList.remove('is-scrolling');
+        isScrolling = false;
+        logger.debug('Scroll lock released');
+      }, 300);
+    }
+    
+    touchStartY = 0;
+    touchStartX = 0;
   };
   
   /**
@@ -110,14 +182,80 @@ const MobileInteractions = (() => {
     // Use event delegation to capture button clicks
     navBar.addEventListener('click', (e) => {
       const button = e.target.closest('button');
-      if (button) {
+      if (button && !document.body.classList.contains('is-scrolling')) {
         activeTabId = button.id;
         logger.debug(`Active tab changed to: ${activeTabId}`);
         
         // Re-apply the protection for the newly active section
         setTimeout(protectScrollableSections, 100);
+      } else if (document.body.classList.contains('is-scrolling')) {
+        // Prevent tab changes during scroll
+        e.preventDefault();
+        e.stopPropagation();
+        logger.debug('Tab change prevented during scroll');
       }
     });
+    
+    // Also add direct touch handlers to prevent unwanted tab changes
+    navBar.querySelectorAll('button').forEach(button => {
+      button.addEventListener('touchstart', (e) => {
+        // Store original button position to check if this is a scroll or a tap
+        const rect = button.getBoundingClientRect();
+        button.dataset.touchStartY = e.touches[0].clientY;
+        button.dataset.touchStartX = e.touches[0].clientX;
+        button.dataset.touchStartTop = rect.top;
+      }, { passive: true });
+      
+      button.addEventListener('touchend', (e) => {
+        // Check if this was a scroll or a real tap
+        if (isScrolling || document.body.classList.contains('is-scrolling')) {
+          // This was a scroll, prevent tab change
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        
+        // Check if button moved significantly (indicating a scroll rather than a tap)
+        const currentRect = button.getBoundingClientRect();
+        const startTop = parseFloat(button.dataset.touchStartTop || '0');
+        
+        if (Math.abs(currentRect.top - startTop) > 10) {
+          // Button position changed significantly, likely a scroll
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }, { passive: false }); // Not passive to allow preventDefault
+    });
+  };
+  
+  /**
+   * Override DataTables event handling in non-table tabs
+   */
+  const setupDataTablesOverride = () => {
+    // Wait for DataTables to be loaded
+    if (!window.jQuery?.fn?.dataTable) {
+      setTimeout(setupDataTablesOverride, 500);
+      return;
+    }
+    
+    const $ = window.jQuery;
+    
+    // Store the original _fnDraw function
+    const originalFnDraw = $.fn.dataTable.ext.internal._fnDraw;
+    
+    // Override the _fnDraw function to prevent table redraws during scrolling
+    if (originalFnDraw) {
+      $.fn.dataTable.ext.internal._fnDraw = function() {
+        // Only allow drawing when in table tab or not scrolling
+        if (activeTabId === 'mobile-table-btn' || (!isScrolling && !document.body.classList.contains('is-scrolling'))) {
+          return originalFnDraw.apply(this, arguments);
+        } else {
+          logger.debug('Prevented DataTables draw during scroll in non-table tab');
+          return;
+        }
+      };
+    }
   };
   
   /**
@@ -133,6 +271,7 @@ const MobileInteractions = (() => {
       
       section.removeEventListener('touchstart', handleTouchStart);
       section.removeEventListener('touchmove', handleTouchMove);
+      section.removeEventListener('touchend', handleTouchEnd);
     });
     
     // Add touch event listeners to scrollable sections
@@ -141,9 +280,11 @@ const MobileInteractions = (() => {
       
       section.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
       section.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
+      section.addEventListener('touchend', handleTouchEnd, { passive: false, capture: true });
       
       // Add a visual indicator that this section has touch protection
       section.setAttribute('data-touch-protected', 'true');
+      section.classList.add('touch-protected');
       
       logger.debug(`Touch protection added to section: ${section.id || section.className}`);
     });
@@ -154,6 +295,7 @@ const MobileInteractions = (() => {
       if (formSection && !formSection.classList.contains('hidden')) {
         // Add special class for CSS styling
         formSection.classList.add('touch-protected');
+        formSection.classList.add('current-mobile-tab');
       }
     }
   };
@@ -174,6 +316,17 @@ const MobileInteractions = (() => {
    * Use capture phase to intercept before DataTables
    */
   const handleTouchMove = (event) => {
+    // Only stop propagation if we're not in the table tab
+    if (activeTabId !== 'mobile-table-btn') {
+      event.stopPropagation();
+    }
+  };
+  
+  /**
+   * Handle touch end events
+   * Use capture phase to intercept before DataTables
+   */
+  const handleTouchEnd = (event) => {
     // Only stop propagation if we're not in the table tab
     if (activeTabId !== 'mobile-table-btn') {
       event.stopPropagation();
@@ -209,8 +362,8 @@ const MobileInteractions = (() => {
     const originalTouch = $.fn.dataTable.ext.features.touch;
     if (originalTouch) {
       $.fn.dataTable.ext.features.touch = function() {
-        // Only enable touch handling when in the table tab
-        if (activeTabId === 'mobile-table-btn') {
+        // Only enable touch handling when in the table tab and not scrolling
+        if (activeTabId === 'mobile-table-btn' && !isScrolling && !document.body.classList.contains('is-scrolling')) {
           return originalTouch.apply(this, arguments);
         }
         return false;
