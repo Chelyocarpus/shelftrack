@@ -10,6 +10,7 @@ const { debounce, showAlert } = window.utils;
 const { log } = window.logger;
 
 let shelves = loadShelves();
+let recentlyAddedShelves = [];
 
 const shelfForm = document.getElementById('shelf-form');
 const shelfTableBody = document.getElementById('shelf-table-body');
@@ -53,15 +54,134 @@ shelfForm.addEventListener('submit', (e) => {
   const dateInput = document.getElementById('inventory-date');
   const shelf = shelfInput.value.trim().toUpperCase();
   const date = dateInput.value;
-  if (!/^[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}$/.test(shelf)) {
-    showAlert('Shelf number format is invalid.');
-    return;
+
+  try {
+    // Validate input
+    if (!/^[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}$/.test(shelf)) {
+      showAlert('Shelf number format is invalid.', { 
+        html: true, 
+        isConfirm: false,
+        alertType: 'error'
+      });
+      return;
+    }
+
+    // Check if shelf already exists and show duplicate error
+    if (shelves[shelf]) {
+      showAlert(`
+        <div class="flex items-start">
+          <i class="fas fa-exclamation-triangle h-6 w-6 text-yellow-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Duplicate Entry!</span>
+            <p>Shelf <span class="font-mono font-medium">${shelf}</span> already exists with date ${formatDateDisplay(shelves[shelf])}.</p>
+            <p class="mt-2">Would you like to update it to ${formatDateDisplay(date)}?</p>
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        alertType: 'warning',
+        isConfirm: true,
+        confirmText: 'Update',
+        onConfirm: () => {
+          // Update the shelf with new date
+          shelves[shelf] = date;
+          saveAndRender();
+          
+          // Show confirmation dialog for update
+          showAlert(`
+            <div class="flex items-center">
+              <i class="fas fa-check-circle h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+              <div>
+                <span class="font-medium">Success!</span>
+                <p>Shelf <span class="font-mono font-medium">${shelf}</span> was updated with date ${formatDateDisplay(date)}.</p>
+              </div>
+            </div>
+          `, { 
+            html: true, 
+            alertType: 'success',
+            autoClose: 2000 // Auto close after 2 seconds
+          });
+          
+          // Scroll to updated shelf
+          setTimeout(() => {
+            const updatedRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
+            if (updatedRow) {
+              updatedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              
+              // Add a flash effect to highlight the updated row
+              updatedRow.classList.add('highlight-new-row');
+            }
+          }, 300);
+          
+          // Clear inputs and focus
+          shelfInput.value = '';
+          dateInput.value = '';
+          shelfInput.focus();
+        }
+      });
+      return;
+    }
+    
+    // If shelf doesn't exist, proceed with adding it
+    shelves[shelf] = date;
+    
+    // Add to recently added shelves list with timestamp
+    recentlyAddedShelves.push({
+      shelf,
+      timestamp: Date.now()
+    });
+    
+    // Only keep the 5 most recent additions
+    if (recentlyAddedShelves.length > 5) {
+      recentlyAddedShelves.shift();
+    }
+    
+    saveAndRender();
+    
+    // Show confirmation dialog
+    showAlert(`
+      <div class="flex items-center">
+        <i class="fas fa-check-circle h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+        <div>
+          <span class="font-medium">Success!</span>
+          <p>Shelf <span class="font-mono font-medium">${shelf}</span> was added with date ${formatDateDisplay(date)}.</p>
+        </div>
+      </div>
+    `, { 
+      html: true, 
+      alertType: 'success',
+      autoClose: 2000 // Auto close after 2 seconds
+    });
+    
+    // Scroll to newly added shelf after render
+    setTimeout(() => {
+      const newRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
+      if (newRow) {
+        newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+
+    // Clear inputs and focus
+    shelfInput.value = '';
+    dateInput.value = '';
+    shelfInput.focus();
+  } 
+  catch (error) {
+    log({ level: 'error', message: 'Error adding shelf', error });
+    showAlert(`
+      <div class="flex items-start">
+        <i class="fas fa-exclamation-circle h-6 w-6 text-red-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
+        <div>
+          <span class="font-medium">Failed!</span>
+          <p>Could not add shelf. Please try again.</p>
+          <p class="text-sm text-gray-600 mt-1">${error.message || 'Unknown error'}</p>
+        </div>
+      </div>
+    `, { 
+      html: true, 
+      alertType: 'error'
+    });
   }
-  shelves[shelf] = date;
-  saveAndRender();
-  shelfInput.value = '';
-  dateInput.value = '';
-  shelfInput.focus();
 });
 
 const checkInventory = (shelf) => {
@@ -161,7 +281,7 @@ const formatDateDisplay = (isoDate) => {
   return `${day}.${month}.${year}`;
 };
 
-// Helper to get date status
+// Enhanced getDateStatus function with more detailed inventory status
 const getDateStatus = (date) => {
   const today = new Date();
   const dateObj = new Date(date);
@@ -169,32 +289,95 @@ const getDateStatus = (date) => {
   dateObj.setHours(0, 0, 0, 0);
   
   if (dateObj < today) {
-    return 'expired';
+    // Calculate how many days overdue
+    const daysDiff = Math.floor((today - dateObj) / (1000 * 60 * 60 * 24));
+    return { 
+      status: 'expired', 
+      daysDiff,
+      label: daysDiff === 1 ? '1 day overdue' : `${daysDiff} days overdue`
+    };
   }
   
   const diffDays = Math.floor((dateObj - today) / (1000 * 60 * 60 * 24));
   if (diffDays <= 7) {
-    return 'approaching';
+    return { 
+      status: 'approaching', 
+      daysDiff: diffDays,
+      label: diffDays === 0 ? 'Due today' : diffDays === 1 ? 'Due tomorrow' : `Due in ${diffDays} days`
+    };
   }
   
-  return '';
+  return { 
+    status: 'current', 
+    daysDiff: diffDays,
+    label: `Due in ${diffDays} days`
+  };
 };
 
+// Function to update the dashboard statistics
+const updateDashboard = (shelfData) => {
+  const counts = {
+    expired: 0,
+    approaching: 0,
+    current: 0
+  };
+  
+  // Count shelves by status
+  shelfData.forEach(item => {
+    if (item.status.status === 'expired') {
+      counts.expired++;
+    } else if (item.status.status === 'approaching') {
+      counts.approaching++;
+    } else {
+      counts.current++;
+    }
+  });
+  
+  // Update the dashboard elements
+  const overdueElement = document.getElementById('overdue-value');
+  const upcomingElement = document.getElementById('upcoming-value');
+  const currentElement = document.getElementById('current-value');
+  
+  if (overdueElement) {
+    overdueElement.textContent = counts.expired;
+  }
+  
+  if (upcomingElement) {
+    upcomingElement.textContent = counts.approaching;
+  }
+  
+  if (currentElement) {
+    currentElement.textContent = counts.current;
+  }
+  
+  // Add badge to page title if there are overdue shelves
+  if (counts.expired > 0) {
+    document.title = `(${counts.expired}) ShelfTrack| Inventory Schedule Management`;
+  } else {
+    document.title = `ShelfTrack | Inventory Schedule Management`;
+  }
+};
+
+// Enhanced renderTable function to allow table to spill instead of scroll
 const renderTable = () => {
   // Prepare data for DataTable with raw dates and links
   const groups = loadGroups(); // Changed from loadLinks() to loadGroups()
   const shelfArr = getShelvesArray().map(([shelf, date]) => {
     // Find which group this shelf belongs to, if any
     const linkedShelves = getLinkedShelves(shelf);
+    const status = getDateStatus(date);
     
     return {
       shelf,
       date,
-      status: getDateStatus(date),
+      status,
       displayDate: formatDateDisplay(date),
       links: linkedShelves // Use getLinkedShelves instead of links[shelf]
     };
   });
+
+  // Update the dashboard with the current data
+  updateDashboard(shelfArr);
 
   // Destroy previous DataTable instance if exists
   if (window.shelfDataTable) {
@@ -216,11 +399,32 @@ const renderTable = () => {
           className: 'px-4 py-3 font-mono',
           render: function(data, type, row) {
             // Show link icon if shelf has links
-            if (type === 'display' && row.links && row.links.length > 0) {
-              return `${data} <svg xmlns="http://www.w3.org/2000/svg" class="inline-block w-4 h-4 text-primary-500 ml-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <title>Linked shelves</title>
-                <path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd" />
-              </svg>`;
+            // Also show the status label below the shelf code
+            if (type === 'display') {
+              let statusClass = '';
+              let statusIcon = '';
+
+              if (row.status.status === 'expired') {
+                statusIcon = '<i class="fas fa-exclamation-circle text-red-500 mr-1"></i>';
+                statusClass = 'text-red-600 font-medium';
+              } else if (row.status.status === 'approaching') {
+                statusIcon = '<i class="fas fa-clock text-yellow-500 mr-1"></i>';
+                statusClass = 'text-yellow-600';
+              } else {
+                statusIcon = '<i class="fas fa-check text-green-500 mr-1"></i>';
+                statusClass = 'text-green-600';
+              }
+
+              return `
+                <div>
+                  <span>${data} ${row.links && row.links.length > 0 ? 
+                    '<i class="fas fa-link text-primary-500 ml-1" aria-hidden="true" title="Linked shelves"></i>' : 
+                    ''}
+                  </span>
+                  <div class="text-xs mt-1 ${statusClass} flex items-center">
+                    ${statusIcon}${row.status.label}
+                  </div>
+                </div>`;
             }
             return data;
           }
@@ -229,13 +433,21 @@ const renderTable = () => {
           data: null,
           className: 'px-4 py-3 text-sm editable-date cursor-pointer underline decoration-dotted decoration-primary-400 transition-colors focus:bg-primary-100',
           render: function(data) {
+            // Only show the date value with its edit icon - status moved to shelf column
+            let statusClass = '';
+            
+            if (data.status.status === 'expired') {
+              statusClass = 'text-red-600 font-semibold';
+            } else if (data.status.status === 'approaching') {
+              statusClass = 'text-yellow-600';
+            } else {
+              statusClass = 'text-green-600';
+            }
+            
             return `
-              <span class="date-value" data-raw-date="${data.date}">${data.displayDate}</span>
+              <span class="date-value ${statusClass}" data-raw-date="${data.date}">${data.displayDate}</span>
               <span class="sr-only">(editable)</span>
-              <svg xmlns="http://www.w3.org/2000/svg" class="inline ml-1 w-4 h-4 text-primary-400 align-text-bottom pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" focusable="false">
-                <title>Edit date</title>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536M9 13l6-6m2 2l-6 6m-2 2h6a2 2 0 002-2v-6a2 2 0 00-2-2h-6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
-              </svg>`;
+              <i class="fas fa-pencil-alt ml-1 text-primary-400 align-text-bottom pointer-events-none" aria-hidden="true"></i>`;
           }
         },
         {
@@ -244,9 +456,16 @@ const renderTable = () => {
           render: function(shelf) {
             return `
               <div class="flex">
-                <button class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 active:bg-red-800 min-w-[44px] min-h-[44px] transition-colors" 
+                <button class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 active:bg-red-800 min-w-[44px] min-h-[44px] transition-colors mr-2" 
                   aria-label="Remove ${shelf}" 
-                  onclick="window.app.removeShelf('${shelf}')">Remove</button>
+                  onclick="window.app.removeShelf('${shelf}')">
+                  <i class="fas fa-trash mr-1"></i> Remove
+                </button>
+                <button class="bg-primary-600 text-white px-4 py-2 rounded text-sm hover:bg-primary-700 active:bg-primary-800 min-w-[44px] min-h-[44px] transition-colors" 
+                  aria-label="Mark inventory complete for ${shelf}" 
+                  onclick="window.app.markInventoryComplete('${shelf}')">
+                  <i class="fas fa-check-circle mr-1"></i> Done
+                </button>
               </div>`;
           }
         }
@@ -254,14 +473,30 @@ const renderTable = () => {
       // Use raw date for sorting
       order: [[1, 'asc']],
       createdRow: function(row, data) {
+        // Add data attribute for shelf identification
+        jq(row).attr('data-shelf', data.shelf);
+        
         const baseClasses = 'transition-colors border-b';
-        // Add stronger background colors that won't be overridden
-        if (data.status === 'expired') {
+        
+        // Check if this shelf was recently added (within last 30 seconds)
+        const recentlyAdded = recentlyAddedShelves.find(item => 
+          item.shelf === data.shelf && (Date.now() - item.timestamp) < 30000
+        );
+        
+        if (recentlyAdded) {
+          // Apply highlight animation for recently added shelves
+          jq(row).addClass(`${baseClasses} highlight-new-row`);
+          
+          // Add "NEW" badge
+          const firstCell = jq(row).find('td:first-child');
+          firstCell.append('<span class="ml-2 inline-block px-1.5 py-0.5 text-xs font-bold bg-green-500 text-white rounded animate-pulse">NEW</span>');
+        }
+        else if (data.status.status === 'expired') {
           jq(row).addClass(`${baseClasses} !bg-red-100`).hover(
             function() { jq(this).addClass('!bg-red-200'); },
             function() { jq(this).removeClass('!bg-red-200'); }
           );
-        } else if (data.status === 'approaching') {
+        } else if (data.status.status === 'approaching') {
           jq(row).addClass(`${baseClasses} !bg-yellow-100`).hover(
             function() { jq(this).addClass('!bg-yellow-200'); },
             function() { jq(this).removeClass('!bg-yellow-200'); }
@@ -303,140 +538,194 @@ const renderTable = () => {
           previous: '<span aria-hidden="true">&laquo;</span>',
           next: '<span aria-hidden="true">&raquo;</span>'
         },
-        emptyTable: 'No shelves available'
+        emptyTable: 'No shelves to inventory - add one to get started'
       },
+      // Remove scrollY and scrollCollapse to let table content spill
+      scrollY: '',
+      scrollCollapse: false,
       initComplete: function() {
         // Add custom styling to DataTables elements
         jq('.dataTables_length select').addClass('border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400');
         jq('.dataTables_filter input').addClass('border rounded px-3 py-1 ml-2 focus:outline-none focus:ring-1 focus:ring-primary-400');
         jq('.dataTables_paginate .paginate_button').addClass('px-3 py-1 border rounded mx-1 hover:bg-gray-100');
         jq('.dataTables_paginate .paginate_button.current').addClass('bg-primary-50 text-primary-700 border-primary-300');
+        
+        // Clean up stale recently added shelves (older than 30 seconds)
+        recentlyAddedShelves = recentlyAddedShelves.filter(item => 
+          (Date.now() - item.timestamp) < 30000
+        );
+
+        // Use event delegation for date editing instead of attaching to each cell
+        setupDateEditingWithDelegation();
+      },
+      // Add a custom order to prioritize expired shelves first
+      rowCallback: function(row, data) {
+        if (data.status.status === 'expired') {
+          jq(row).addClass('priority-high');
+        } else if (data.status.status === 'approaching') {
+          jq(row).addClass('priority-medium');
+        } else {
+          jq(row).addClass('priority-low');
+        }
       }
     });
 
-    // Add legend after table
+    // Add page change listener to ensure edit handlers work properly
+    window.shelfDataTable.on('page.dt', function() {
+      // Let the table render the new page before reattaching handlers
+      setTimeout(() => {
+        log({ level: 'info', message: 'DataTable page changed, refreshing edit handlers' });
+      }, 100); // Small delay to ensure DOM has updated
+    });
+
+    // Add enhanced legend after table
     const legend = `
-      <div class="mt-4 text-sm flex gap-4">
+      <div class="mt-4 text-sm flex flex-wrap gap-4">
         <span class="flex items-center">
           <span class="w-4 h-4 inline-block mr-2 bg-red-100"></span>
-          Expired
+          <i class="fas fa-exclamation-circle text-red-500 mr-1"></i>
+          Overdue - Inventory needed
         </span>
         <span class="flex items-center">
           <span class="w-4 h-4 inline-block mr-2 bg-yellow-100"></span>
+          <i class="fas fa-clock text-yellow-500 mr-1"></i>
           Due within 7 days
+        </span>
+        <span class="flex items-center">
+          <span class="w-4 h-4 inline-block mr-2 bg-white border"></span>
+          <i class="fas fa-check text-green-500 mr-1"></i>
+          Current - No action needed
         </span>
       </div>`;
     jq('#shelf-table_wrapper').append(legend);
   }
 
-  // Inline date editing - Add touch events
-  shelfTableBody.querySelectorAll('.editable-date').forEach(td => {
-    const startEdit = (e) => {
-      if (td.querySelector('input')) {
-        return;
-      }
-      const { shelf } = td.dataset;
-      const oldDate = shelves[shelf];
-      const dateSpan = td.querySelector('.date-value');
-      const editIcon = td.querySelector('svg');
-      
-      if (!dateSpan) {
-        return;
-      }
-
-      // Hide the date text and icon, but keep them in DOM
-      dateSpan.style.display = 'none';
-      if (editIcon) {
-        editIcon.style.display = 'none';
-      }
-
-      const input = document.createElement('input');
-      input.type = 'date';
-      input.value = oldDate;
-      input.className = 'border border-primary-400 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50 touch-manipulation';
-      input.setAttribute('aria-label', `Change date for ${shelf}`);
-      td.insertBefore(input, dateSpan);
-      input.focus();
-
-      const restoreCell = (val) => {
-        input.remove();
-        dateSpan.textContent = formatDateDisplay(val);
-        dateSpan.style.display = '';
-        if (editIcon) {
-          editIcon.style.display = '';
-        }
-      };
-
-      const saveDate = () => {
-        const newDate = input.value;
-        if (newDate && newDate !== oldDate) {
-          // Get linked shelves
-          const linkedShelves = getLinkedShelves(shelf);
-          
-          // Update this shelf
-          shelves[shelf] = newDate;
-          
-          // If this shelf is part of a group, update all shelves in the group
-          // to have the same date (the most recent one)
-          if (linkedShelves.length > 0) {
-            // Always use the new date for all shelves in the group
-            linkedShelves.forEach(linkedShelf => {
-              shelves[linkedShelf] = newDate;
-              log({ 
-                level: 'info', 
-                message: `Updated date for linked shelf ${linkedShelf} to ${newDate}`
-              });
-            });
-          }
-          
-          saveAndRender();
-        } else {
-          restoreCell(oldDate);
-        }
-      };
-
-      // Handle touch events
-      let touchMoved = false;
-      input.addEventListener('touchstart', () => {
-        touchMoved = false;
-      });
-      input.addEventListener('touchmove', () => {
-        touchMoved = true;
-      });
-      input.addEventListener('touchend', (ev) => {
-        if (!touchMoved) {
-          ev.preventDefault();
-        }
-      });
-
-      input.addEventListener('blur', saveDate);
-      input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') {
-          saveDate();
-          ev.preventDefault();
-        } else if (ev.key === 'Escape') {
-          restoreCell(oldDate);
-          ev.preventDefault();
-        }
-      });
-    };
-
-    // Add both mouse and touch event handlers
-    td.addEventListener('click', startEdit);
-    td.addEventListener('touchend', (e) => {
-      if (!e.target.closest('input')) {
-        e.preventDefault();
-        startEdit(e);
-      }
-    });
-  });
-
+  // Use event delegation instead of attaching directly to each cell
+  setupDateEditingWithDelegation();
+  
   // Update the linked shelves panel
   renderLinkedShelvesPanel();
   renderLinkOptions();
 };
 
-// Render the linked shelves panel with improved UX
+// New function to set up date editing with event delegation
+const setupDateEditingWithDelegation = () => {
+  // Remove any existing delegated event handlers first to prevent duplicates
+  const table = document.getElementById('shelf-table');
+  if (!table) return;
+
+  // Remove previous event listeners if any
+  table.removeEventListener('click', handleDateCellClick);
+  table.removeEventListener('touchend', handleDateCellTouch);
+  
+  // Add event delegation for clicks
+  table.addEventListener('click', handleDateCellClick);
+  
+  // Add event delegation for touch events
+  table.addEventListener('touchend', handleDateCellTouch);
+};
+
+// Event handler for date cell clicks
+const handleDateCellClick = (e) => {
+  const cell = e.target.closest('.editable-date');
+  if (cell && !cell.querySelector('input')) {
+    startCellEdit(cell);
+  }
+};
+
+// Event handler for date cell touch events
+const handleDateCellTouch = (e) => {
+  const cell = e.target.closest('.editable-date');
+  if (cell && !cell.querySelector('input')) {
+    e.preventDefault(); // Prevent default touch actions
+    startCellEdit(cell);
+  }
+};
+
+// Function to start cell editing
+const startCellEdit = (cell) => {
+  // Don't start editing if already editing
+  if (cell.querySelector('input') || !cell.dataset.shelf) return;
+  
+  const shelf = cell.dataset.shelf;
+  const oldDate = shelves[shelf];
+  const dateSpan = cell.querySelector('.date-value');
+  const editIcon = cell.querySelector('.fa-pencil-alt');
+  
+  if (!dateSpan) return;
+
+  // Hide the date text and icon, but keep them in DOM
+  dateSpan.style.display = 'none';
+  if (editIcon) editIcon.style.display = 'none';
+
+  // Create input element
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.value = oldDate;
+  input.className = 'border border-primary-400 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50 touch-manipulation';
+  input.setAttribute('aria-label', `Change date for ${shelf}`);
+  cell.insertBefore(input, dateSpan);
+
+  // Focus input after a short delay for touch devices
+  setTimeout(() => {
+    input.focus();
+    input.click();
+  }, 10);
+
+  const restoreCell = (val) => {
+    input.remove();
+    dateSpan.textContent = formatDateDisplay(val);
+    dateSpan.style.display = '';
+    if (editIcon) editIcon.style.display = '';
+  };
+
+  const saveDate = () => {
+    const newDate = input.value;
+    if (newDate && newDate !== oldDate) {
+      // Get linked shelves
+      const linkedShelves = getLinkedShelves(shelf);
+      
+      // Update this shelf
+      shelves[shelf] = newDate;
+      
+      // If this shelf is part of a group, update all shelves in the group
+      if (linkedShelves.length > 0) {
+        // Always use the new date for all shelves in the group
+        linkedShelves.forEach(linkedShelf => {
+          shelves[linkedShelf] = newDate;
+          log({ 
+            level: 'info', 
+            message: `Updated date for linked shelf ${linkedShelf} to ${newDate}`
+          });
+        });
+      }
+      
+      saveAndRender();
+    } else {
+      restoreCell(oldDate);
+    }
+  };
+
+  // Handle input blur (save)
+  input.addEventListener('blur', saveDate);
+  
+  // Handle keyboard events
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      saveDate();
+      ev.preventDefault();
+    } else if (ev.key === 'Escape') {
+      restoreCell(oldDate);
+      ev.preventDefault();
+    }
+  });
+
+  // Prevent duplicate edit on touch
+  input.addEventListener('touchend', (ev) => {
+    ev.stopPropagation();
+  });
+};
+
 const renderLinkedShelvesPanel = () => {
   const linksContainer = document.getElementById('linked-shelves-container');
   if (!linksContainer) return;
@@ -455,7 +744,7 @@ const renderLinkedShelvesPanel = () => {
       const groupId = `group-${groupIndex}`;
       const groupName = group.name || `Group ${groupIndex + 1}`;
       htmlContent += `
-        <div class="bg-white border rounded shadow-sm overflow-hidden">
+        <div class="bg-white border rounded shadow-sm">
           <div class="bg-primary-50 px-3 py-2 flex justify-between items-center">
             <div class="flex items-center gap-2">
               <span class="font-medium text-primary-800 group-name" id="group-name-${groupIndex}">${groupName}</span>
@@ -464,9 +753,7 @@ const renderLinkedShelvesPanel = () => {
                 class="p-1 text-primary-700 hover:bg-primary-200 rounded"
                 aria-label="Edit group name"
                 title="Edit group name">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536M9 13l6-6m2 2l-6 6m-2 2h6a2 2 0 002-2v-6a2 2 0 00-2-2h-6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
-                </svg>
+                <i class="fas fa-edit h-4 w-4" aria-hidden="true"></i>
               </button>
             </div>
             <div class="flex items-center space-x-1">
@@ -475,9 +762,7 @@ const renderLinkedShelvesPanel = () => {
                 class="p-1 text-primary-700 hover:bg-primary-100 rounded"
                 aria-label="Add shelf to this group"
                 title="Add shelf">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-                </svg>
+                <i class="fas fa-plus h-4 w-4" aria-hidden="true"></i>
               </button>
               <button 
                 onclick="window.app.expandCollapseGroup('${groupId}')" 
@@ -485,9 +770,7 @@ const renderLinkedShelvesPanel = () => {
                 class="p-1 text-primary-700 hover:bg-primary-100 rounded"
                 aria-label="${group.shelves.length > 3 ? 'Show all shelves' : 'Collapse group'}"
                 aria-expanded="${group.shelves.length > 3 ? 'false' : 'true'}">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                </svg>
+                <i class="fas fa-chevron-down h-4 w-4" aria-hidden="true"></i>
               </button>
             </div>
           </div>
@@ -500,9 +783,7 @@ const renderLinkedShelvesPanel = () => {
                     onclick="window.app.removeFromGroup('${shelf}')" 
                     class="ml-1 text-gray-500 hover:text-red-600"
                     aria-label="Remove ${shelf} from group">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
+                    <i class="fas fa-times h-3.5 w-3.5" aria-hidden="true"></i>
                   </button>
                 </div>
               `).join('')}
@@ -522,9 +803,7 @@ const renderLinkedShelvesPanel = () => {
                     onclick="window.app.removeFromGroup('${shelf}')" 
                     class="ml-1 text-gray-500 hover:text-red-600"
                     aria-label="Remove ${shelf} from group">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
+                    <i class="fas fa-times h-3.5 w-3.5" aria-hidden="true"></i>
                   </button>
                 </div>
               `).join('')}
@@ -565,16 +844,13 @@ const expandCollapseGroup = (groupId) => {
   if (group && button) {
     const isExpanded = group.classList.toggle('hidden');
     button.setAttribute('aria-expanded', !isExpanded);
+    button.setAttribute('aria-label', isExpanded ? 'Show all shelves' : 'Collapse group');
     
-    // Change icon direction
+    // Change icon direction with consistent sizing
     if (isExpanded) {
-      button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-      </svg>`;
+      button.innerHTML = `<i class="fas fa-chevron-down h-4 w-4" aria-hidden="true"></i>`;
     } else {
-      button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
-      </svg>`;
+      button.innerHTML = `<i class="fas fa-chevron-up h-4 w-4" aria-hidden="true"></i>`;
     }
   }
 };
@@ -708,9 +984,7 @@ const createGroup = () => {
       </div>
       <button type="button" id="add-another-shelf" 
         class="mt-2 text-sm bg-primary-100 text-primary-700 px-3 py-1 rounded hover:bg-primary-200 flex items-center gap-1 transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-        </svg>
+        <i class="fas fa-plus h-4 w-4" aria-hidden="true"></i>
         Add Another Shelf
       </button>
     </div>
@@ -794,9 +1068,7 @@ const createGroup = () => {
             ${optionsHtml}
           </select>
           <button type="button" class="remove-shelf ml-2 p-1 text-red-600 hover:bg-red-100 rounded">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-            </svg>
+            <i class="fas fa-times h-4 w-4" aria-hidden="true"></i>
           </button>
         `;
         
@@ -871,11 +1143,79 @@ const renderLinkOptions = () => {
   }
 };
 
+// Updated function to first ask for confirmation before marking inventory complete
+const markInventoryComplete = (shelf) => {
+  const oldDate = shelves[shelf];
+  
+  // Ask for confirmation before proceeding
+  showAlert(`
+    <div class="flex items-start">
+      <i class="fas fa-question-circle h-6 w-6 text-primary-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
+      <div>
+        <span class="font-medium">Mark as complete?</span>
+        <p>Are you sure you want to mark shelf <span class="font-mono font-medium">${shelf}</span> as completed?</p>
+        <p class="mt-1 text-sm text-gray-600">This will update the date and move the shelf to the end of the list.</p>
+      </div>
+    </div>
+  `, { 
+    html: true, 
+    alertType: 'info',
+    isConfirm: true,
+    confirmText: 'Complete Inventory',
+    onConfirm: () => {
+      // Find the latest date in all shelves
+      const today = new Date().toISOString().split('T')[0];
+      let latestDate = today;
+      Object.values(shelves).forEach(date => {
+        if (date > latestDate) {
+          latestDate = date;
+        }
+      });
+      
+      // Set date to one day after the latest date to ensure it appears at the end
+      const latestDateObj = new Date(latestDate);
+      latestDateObj.setDate(latestDateObj.getDate() + 1);
+      const newDate = latestDateObj.toISOString().split('T')[0];
+      
+      // Update the shelf with the new date
+      shelves[shelf] = newDate;
+      
+      // If shelf is in a group, update all linked shelves
+      const linkedShelves = getLinkedShelves(shelf);
+      if (linkedShelves.length > 0) {
+        linkedShelves.forEach(linkedShelf => {
+          shelves[linkedShelf] = newDate;
+        });
+      }
+      
+      saveAndRender();
+      
+      // Show success message with clear explanation of what happened
+      showAlert(`
+        <div class="flex items-center">
+          <i class="fas fa-check-circle h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Inventory Complete!</span>
+            <p>Shelf <span class="font-mono font-medium">${shelf}</span> was updated from ${formatDateDisplay(oldDate)} to ${formatDateDisplay(newDate)}.</p>
+            <p class="mt-1 text-xs text-gray-600">The date was set to ensure this shelf appears at the end of the list.</p>
+            ${linkedShelves.length > 0 ? `<p class="mt-1 text-sm">Also updated ${linkedShelves.length} linked ${linkedShelves.length === 1 ? 'shelf' : 'shelves'}.</p>` : ''}
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        alertType: 'success',
+        autoClose: 2500
+      });
+    }
+  });
+};
+
 window.app = { 
   checkInventory, removeShelf, 
   linkShelvesUI, unlinkShelvesUI,
   expandCollapseGroup, removeFromGroup,
-  addToGroup, createGroup, editGroupName
+  addToGroup, createGroup, editGroupName,
+  markInventoryComplete
 };
 
 // Initial render
@@ -897,4 +1237,233 @@ document.addEventListener('DOMContentLoaded', () => {
   if (createGroupBtn) {
     createGroupBtn.addEventListener('click', createGroup);
   }
+});
+
+// --- Mobile UX Enhancements ---
+
+// Add mobile navigation bar with 3 buttons: Table, Add, Groups
+const setupMobileNavigation = () => {
+  if (window.innerWidth >= 1024) {
+    // Desktop: show all sections
+    document.querySelectorAll('.lg\\:col-span-1, .lg\\:col-span-2, .lg\\:col-span-3').forEach(el => {
+      el.classList.remove('hidden');
+    });
+    // Show both add and groups panels on desktop
+    document.querySelectorAll('.lg\\:col-span-1 > .bg-white.rounded-lg.shadow-lg.p-6').forEach(el => {
+      el.classList.remove('hidden');
+    });
+    
+    // Remove any mobile-specific scroll restrictions
+    document.body.classList.remove('has-mobile-nav');
+    
+    return;
+  }
+
+  // Mobile: show only one section at a time
+  const formSection = document.querySelector('.lg\\:col-span-1');
+  const tableSection = document.querySelector('.lg\\:col-span-2');
+  // Select both add and groups panels inside the form section
+  const addPanel = document.querySelector('.lg\\:col-span-1 > .bg-white.rounded-lg.shadow-lg.p-6:nth-of-type(1)');
+  const groupsPanel = document.querySelector('.lg\\:col-span-1 > .bg-white.rounded-lg.shadow-lg.p-6:nth-of-type(2)');
+
+  // Add mobile-specific class for styling
+  document.body.classList.add('has-mobile-nav');
+
+  // Add paddings to allow for navigation bar
+  const contentContainer = document.querySelector('.container');
+  if (contentContainer) {
+    contentContainer.classList.add('pb-16');
+  }
+
+  const navBar = document.getElementById('mobile-nav-bar');
+  let navBtns = {};
+
+  // Create nav bar if not present
+  if (!navBar) {
+    const bar = document.createElement('div');
+    bar.id = 'mobile-nav-bar';
+    bar.className = 'lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around shadow-lg z-10';
+    bar.style.padding = '0.5rem 0';
+    bar.innerHTML = `
+      <button id="mobile-table-btn" class="flex-1 py-3 flex flex-col items-center justify-center text-xs bg-primary-600 text-white">
+        <i class="fas fa-table mb-1 h-6 w-6" aria-hidden="true"></i>
+        Table
+      </button>
+      <button id="mobile-add-btn" class="flex-1 py-3 flex flex-col items-center justify-center text-xs bg-primary-100 text-primary-700">
+        <i class="fas fa-plus mb-1 h-6 w-6" aria-hidden="true"></i>
+        Add
+      </button>
+      <button id="mobile-groups-btn" class="flex-1 py-3 flex flex-col items-center justify-center text-xs bg-primary-100 text-primary-700">
+        <i class="fas fa-layer-group mb-1 h-6 w-6" aria-hidden="true"></i>
+        Groups
+      </button>
+    `;
+    document.body.appendChild(bar);
+    navBtns = {
+      table: bar.querySelector('#mobile-table-btn'),
+      add: bar.querySelector('#mobile-add-btn'),
+      groups: bar.querySelector('#mobile-groups-btn')
+    };
+  } else {
+    navBtns = {
+      table: document.getElementById('mobile-table-btn'),
+      add: document.getElementById('mobile-add-btn'),
+      groups: document.getElementById('mobile-groups-btn')
+    };
+  }
+
+  // Hide all panels except table by default
+  if (addPanel) addPanel.classList.add('hidden');
+  if (groupsPanel) groupsPanel.classList.add('hidden');
+  if (tableSection) {
+    tableSection.classList.remove('hidden');
+    tableSection.style.overflow = 'visible';
+    tableSection.style.maxHeight = '';
+    const dataTable = tableSection.querySelector('.dataTables_wrapper');
+    if (dataTable) {
+      dataTable.style.overflow = 'visible';
+    }
+  }
+
+  // Button handlers
+  if (navBtns.table) {
+    navBtns.table.onclick = () => {
+      if (addPanel) addPanel.classList.add('hidden');
+      if (groupsPanel) groupsPanel.classList.add('hidden');
+      if (tableSection) {
+        tableSection.classList.remove('hidden');
+        tableSection.style.overflow = 'visible';
+        tableSection.style.maxHeight = '';
+        if (window.shelfDataTable) {
+          setTimeout(() => window.shelfDataTable.columns.adjust(), 10);
+        }
+        document.body.style.overflow = '';
+      }
+      navBtns.table.classList.add('bg-primary-600', 'text-white');
+      navBtns.table.classList.remove('bg-primary-100', 'text-primary-700');
+      navBtns.add.classList.remove('bg-primary-600', 'text-white');
+      navBtns.add.classList.add('bg-primary-100', 'text-primary-700');
+      navBtns.groups.classList.remove('bg-primary-600', 'text-white');
+      navBtns.groups.classList.add('bg-primary-100', 'text-primary-700');
+    };
+  }
+  if (navBtns.add) {
+    navBtns.add.onclick = () => {
+      if (addPanel) addPanel.classList.remove('hidden');
+      if (groupsPanel) groupsPanel.classList.add('hidden');
+      if (tableSection) tableSection.classList.add('hidden');
+      navBtns.add.classList.add('bg-primary-600', 'text-white');
+      navBtns.add.classList.remove('bg-primary-100', 'text-primary-700');
+      navBtns.table.classList.remove('bg-primary-600', 'text-white');
+      navBtns.table.classList.add('bg-primary-100', 'text-primary-700');
+      navBtns.groups.classList.remove('bg-primary-600', 'text-white');
+      navBtns.groups.classList.add('bg-primary-100', 'text-primary-700');
+      // Focus first input
+      const firstInput = addPanel ? addPanel.querySelector('input') : null;
+      if (firstInput) {
+        setTimeout(() => firstInput.focus(), 100);
+      }
+    };
+  }
+  if (navBtns.groups) {
+    navBtns.groups.onclick = () => {
+      if (addPanel) addPanel.classList.add('hidden');
+      if (groupsPanel) {
+        groupsPanel.classList.remove('hidden');
+        // Remove scroll and maxHeight so only the page scrolls
+        groupsPanel.style.overflow = 'visible';
+        groupsPanel.style.maxHeight = '';
+      }
+      if (tableSection) tableSection.classList.add('hidden');
+      navBtns.groups.classList.add('bg-primary-600', 'text-white');
+      navBtns.groups.classList.remove('bg-primary-100', 'text-primary-700');
+      navBtns.table.classList.remove('bg-primary-600', 'text-white');
+      navBtns.table.classList.add('bg-primary-100', 'text-primary-700');
+      navBtns.add.classList.remove('bg-primary-600', 'text-white');
+      navBtns.add.classList.add('bg-primary-100', 'text-primary-700');
+    };
+  }
+};
+
+// Enhance touch targets and input UX for mobile
+const enhanceMobileUX = () => {
+  // Touch targets
+  document.querySelectorAll('button, select, input[type="submit"]').forEach(el => {
+    el.classList.add('min-h-[44px]');
+  });
+  // Date input: focus and blur for mobile
+  document.querySelectorAll('input[type="date"]').forEach(input => {
+    input.addEventListener('touchstart', () => {
+      input.blur();
+      setTimeout(() => input.focus(), 10);
+    });
+    input.addEventListener('change', () => {
+      setTimeout(() => input.blur(), 300);
+    });
+  });
+  // Haptic feedback
+  if ('vibrate' in navigator) {
+    document.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => navigator.vibrate(30));
+    });
+  }
+  
+  // Fix DataTables to allow content to spill in mobile view
+  if (window.shelfDataTable && window.innerWidth < 1024) {
+    setTimeout(() => {
+      window.shelfDataTable.columns.adjust();
+      
+      // Remove scroll limits
+      const tableWrapper = document.querySelector('.dataTables_wrapper');
+      if (tableWrapper) {
+        tableWrapper.style.overflow = 'visible';
+        
+        const scrollBody = tableWrapper.querySelector('.dataTables_scrollBody');
+        if (scrollBody) {
+          scrollBody.style.maxHeight = '';
+          scrollBody.style.overflow = 'visible';
+        }
+      }
+    }, 100);
+  }
+  
+  // Don't restrict body scrolling normally
+  if (!document.getElementById('custom-alert') || 
+      document.getElementById('custom-alert').classList.contains('hidden')) {
+    document.body.style.overflow = '';
+  }
+};
+
+// Responsive adjustments on resize/orientation
+const handleResponsive = () => {
+  setupMobileNavigation();
+  enhanceMobileUX();
+};
+
+window.addEventListener('resize', debounce(handleResponsive, 200));
+window.addEventListener('orientationchange', () => setTimeout(handleResponsive, 200));
+
+// --- End Mobile UX Enhancements ---
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderTable();
+  renderLinkOptions(); // Add this line to ensure options are populated on page load
+  
+  // Set up link form
+  const linkForm = document.getElementById('link-shelf-form');
+  if (linkForm) {
+    linkForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      linkShelvesUI();
+    });
+  }
+
+  // Add event listener for the Create Group button
+  const createGroupBtn = document.getElementById('create-group-btn');
+  if (createGroupBtn) {
+    createGroupBtn.addEventListener('click', createGroup);
+  }
+
+  setupMobileNavigation();
+  enhanceMobileUX();
 });

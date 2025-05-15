@@ -16,32 +16,83 @@
     return Promise.all(results).then((batches) => batches.flat());
   };
 
-  const showAlert = (message, { html = false, isConfirm = false, onConfirm = null, confirmText = 'Confirm' } = {}) => {
+  const showAlert = (message, { html = false, isConfirm = false, onConfirm = null, confirmText = 'Confirm', alertType = 'info', autoClose = 0 } = {}) => {
     const alertBox = document.getElementById('custom-alert');
     const alertMsg = document.getElementById('alert-message');
     const alertClose = document.getElementById('alert-close');
     const confirmButtons = document.getElementById('confirm-buttons');
     const cancelBtn = document.getElementById('cancel-action');
     const confirmBtn = document.getElementById('confirm-action');
+    const alertTitle = document.querySelector('#custom-alert h3');
     
     if (alertBox && alertMsg) {
+      // Set content
       if (html) {
         alertMsg.innerHTML = message;
       } else {
         alertMsg.textContent = message;
       }
       
-      alertBox.classList.remove('hidden');
+      // Apply different styles based on alert type
+      alertBox.classList.remove('hidden', 'border-blue-500', 'border-green-500', 'border-red-500', 'border-yellow-500');
+      alertBox.classList.add('border-l-4');
+      
+      // Update title and styling based on alert type
+      if (alertTitle) {
+        switch (alertType) {
+          case 'success':
+            alertTitle.textContent = 'Success';
+            alertBox.classList.add('border-green-500');
+            alertTitle.classList.remove('text-gray-800', 'text-red-700', 'text-yellow-700', 'text-blue-700');
+            alertTitle.classList.add('text-green-700');
+            break;
+          case 'error':
+            alertTitle.textContent = 'Error';
+            alertBox.classList.add('border-red-500');
+            alertTitle.classList.remove('text-gray-800', 'text-green-700', 'text-yellow-700', 'text-blue-700');
+            alertTitle.classList.add('text-red-700');
+            break;
+          case 'warning':
+            alertTitle.textContent = 'Warning';
+            alertBox.classList.add('border-yellow-500');
+            alertTitle.classList.remove('text-gray-800', 'text-green-700', 'text-red-700', 'text-blue-700');
+            alertTitle.classList.add('text-yellow-700');
+            break;
+          default: // info
+            alertTitle.textContent = 'Notification';
+            alertBox.classList.add('border-blue-500');
+            alertTitle.classList.remove('text-green-700', 'text-red-700', 'text-yellow-700');
+            alertTitle.classList.add('text-gray-800');
+        }
+      }
+      
+      alertBox.setAttribute('aria-modal', 'true');
+      alertBox.setAttribute('role', 'dialog');
+      alertBox.tabIndex = -1;
+
+      // Focus management for mobile
+      setTimeout(() => {
+        alertBox.focus();
+        alertBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 10);
+      
+      // Store the original overflow value before changing it
+      const originalOverflow = document.body.style.overflow;
       
       // Move function declarations to the top so they're available throughout
       const closeAlert = () => {
         alertBox.classList.add('hidden');
+        alertBox.removeAttribute('aria-modal');
+        alertBox.removeAttribute('role');
+        alertBox.removeAttribute('tabindex');
         if (alertClose) alertClose.removeEventListener('click', closeAlert);
         if (cancelBtn) cancelBtn.removeEventListener('click', handleCancel);
         if (confirmBtn) confirmBtn.removeEventListener('click', handleConfirm);
         document.removeEventListener('keydown', keyHandler);
         alertBox.removeEventListener('click', outsideClickHandler);
-        document.body.style.overflow = '';
+        
+        // Restore the original overflow value
+        document.body.style.overflow = originalOverflow;
       };
       
       const handleCancel = () => {
@@ -85,13 +136,24 @@
         confirmBtn.addEventListener('click', handleConfirm);
       } else {
         if (confirmButtons) confirmButtons.classList.add('hidden');
-        if (alertClose) alertClose.classList.remove('hidden');
-        alertClose.focus();
+        if (alertClose) {
+          alertClose.classList.remove('hidden');
+          alertClose.focus();
+        }
+      }
+      
+      // Auto-close functionality
+      let autoCloseTimeout;
+      if (autoClose > 0) {
+        autoCloseTimeout = setTimeout(closeAlert, autoClose);
       }
       
       // Handle escape key press to close alert
       const keyHandler = (e) => {
         if (e.key === 'Escape') {
+          if (autoCloseTimeout) {
+            clearTimeout(autoCloseTimeout);
+          }
           closeAlert();
         }
       };
@@ -99,12 +161,20 @@
       // Handle click outside dialog to close
       const outsideClickHandler = (e) => {
         if (e.target === alertBox) {
+          if (autoCloseTimeout) {
+            clearTimeout(autoCloseTimeout);
+          }
           closeAlert();
         }
       };
       
       if (alertClose && !isConfirm) {
-        alertClose.addEventListener('click', closeAlert);
+        alertClose.addEventListener('click', () => {
+          if (autoCloseTimeout) {
+            clearTimeout(autoCloseTimeout);
+          }
+          closeAlert();
+        });
       }
       
       document.addEventListener('keydown', keyHandler);
