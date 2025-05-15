@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inventory Shelf Checker</title>
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.3.0/css/dataTables.dataTables.min.css">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: '#eef2ff', 
+                100: '#e0e7ff', 
+                200: '#c7d2fe', 
+                300: '#a5b4fc', 
+                400: '#818cf8', 
+                500: '#6366f1', 
+                600: '#4f46e5', 
+                700: '#4338ca', 
+                800: '#3730a3', 
+                900: '#312e81'
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📦</text></svg>">
+  </head>
+  <body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+      <header class="mb-8">
+        <h1 class="text-3xl font-bold text-primary-700 text-center">Inventory Shelf Checker</h1>
+        <p class="text-gray-500 text-center mt-2">Track and manage shelf inventory efficiently</p>
+      </header>
+      
+      <div class="lg:grid lg:grid-cols-3 lg:gap-8">
+        <!-- Form Section -->
+        <div class="lg:col-span-1 mb-8 lg:mb-0">
+          <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4 text-primary-600">Add New Shelf</h2>
+            <form id="shelf-form" class="flex flex-col gap-4" autocomplete="off">
+              <div>
+                <label for="shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>
+                <input id="shelf-number" name="shelf-number" type="text" pattern="[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}" 
+                  required aria-describedby="shelf-format" 
+                  class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
+                  placeholder="E.g. ABC-12.345" />
+                <span id="shelf-format" class="text-sm text-gray-500 mt-2 block">Format: 3 letters/numbers - 2 numbers . 3 numbers</span>
+              </div>
+              
+              <div>
+                <label for="inventory-date" class="font-medium text-gray-700 block mb-2">Inventory Date:</label>
+                <input id="inventory-date" name="inventory-date" type="date" required 
+                  class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" />
+              </div>
+              
+              <button type="submit" 
+                class="bg-primary-600 text-white rounded px-6 py-3 text-base font-semibold hover:bg-primary-700 active:bg-primary-800 focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 transition-colors mt-4">
+                Save Shelf
+              </button>
+            </form>
+          </div>
+          
+          <!-- Link Shelves Form - Updated UI -->
+          <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4 text-primary-600">Shelf Groups</h2>
+            <p class="text-sm text-gray-600 mb-4">Group shelves that contain the same products.</p>
+            
+            <!-- Group Management Section -->
+            <div class="mb-4">
+              <h3 class="font-medium text-gray-700 mb-2 flex items-center justify-between">
+                <span>Manage Groups</span>
+                <button id="create-group-btn" 
+                  class="text-sm bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-700 flex items-center gap-1 transition-colors"
+                  aria-label="Create new group">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                  </svg>
+                  <span>New Group</span>
+                </button>
+              </h3>
+              <div id="linked-shelves-container" class="border rounded p-2 bg-gray-50 max-h-72 overflow-y-auto">
+                <!-- Linked shelves will be shown here -->
+              </div>
+            </div>
+            
+            <!-- Quick Link Form -->
+            <div class="mt-6 border-t pt-4">
+              <h3 class="font-medium text-gray-700 mb-2">Quick Link</h3>
+              <form id="link-shelf-form" class="flex flex-col gap-3" autocomplete="off">
+                <div>
+                  <label for="link-shelf-1" class="font-medium text-gray-700 block mb-1">First Shelf:</label>
+                  <select id="link-shelf-1" name="link-shelf-1" required 
+                    class="border border-gray-300 rounded px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400">
+                    <!-- Options populated dynamically -->
+                  </select>
+                </div>
+                
+                <div>
+                  <label for="link-shelf-2" class="font-medium text-gray-700 block mb-1">Second Shelf:</label>
+                  <select id="link-shelf-2" name="link-shelf-2" required 
+                    class="border border-gray-300 rounded px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400">
+                    <!-- Options populated dynamically -->
+                  </select>
+                </div>
+                
+                <button type="submit" 
+                  class="bg-primary-600 text-white rounded px-4 py-2 font-semibold hover:bg-primary-700 focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 transition-colors">
+                  Link Shelves
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Table Section -->
+        <div class="lg:col-span-2">
+          <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4 text-primary-600">Shelf Inventory</h2>
+            <div class="overflow-x-auto">
+              <table id="shelf-table" aria-label="Shelves table" class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-gray-50 border-b">
+                    <th class="px-4 py-3">Shelf</th>
+                    <th class="px-4 py-3">Date</th>
+                    <th class="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="shelf-table-body"></tbody>
+              </table>
+              <!-- Legend will be inserted here by JavaScript -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Custom Alert Dialog -->
+    <div id="custom-alert" class="hidden fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full mx-4">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">Notification</h3>
+        <p id="alert-message" class="text-gray-600 mb-4"></p>
+        <div class="flex justify-end gap-3">
+          <div id="confirm-buttons" class="hidden">
+            <button id="cancel-action" class="bg-gray-200 text-gray-700 rounded px-4 py-2 font-medium hover:bg-gray-300 focus:ring-2 focus:ring-gray-300 focus:outline-none">Cancel</button>
+            <button id="confirm-action" class="ml-2 bg-red-600 text-white rounded px-4 py-2 font-medium hover:bg-red-700 focus:ring-2 focus:ring-red-400 focus:outline-none">Delete</button>
+          </div>
+          <button id="alert-close" class="bg-primary-600 text-white rounded px-4 py-2 font-semibold hover:bg-primary-700 focus:ring-2 focus:ring-primary-400 focus:outline-none">OK</button>
+        </div>
+      </div>
+    </div>
+    
+    <script src="js/logger.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/app.js"></script>
+    <!-- jQuery (required for DataTables) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- DataTables JS -->
+    <script src="https://cdn.datatables.net/2.3.0/js/dataTables.min.js"></script>
+  </body>
+</html>
