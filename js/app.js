@@ -1210,32 +1210,43 @@ const markInventoryComplete = (shelf) => {
   });
 };
 
-window.app = { 
-  checkInventory, removeShelf, 
-  linkShelvesUI, unlinkShelvesUI,
-  expandCollapseGroup, removeFromGroup,
-  addToGroup, createGroup, editGroupName,
-  markInventoryComplete
-};
-
-// Initial render
+// Initialize application
 document.addEventListener('DOMContentLoaded', () => {
-  renderTable();
-  renderLinkOptions(); // Add this line to ensure options are populated on page load
-  
-  // Set up link form
-  const linkForm = document.getElementById('link-shelf-form');
-  if (linkForm) {
-    linkForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      linkShelvesUI();
-    });
-  }
+  // Use the globally available logger if it exists, otherwise use console
+  const logger = window.logger || { 
+    info: (msg) => console.info('[App]', msg),
+    warn: (msg) => console.warn('[App]', msg),
+    error: (msg) => console.error('[App]', msg),
+    log: (obj) => console.log('[App]', obj)
+  };
 
-  // Add event listener for the Create Group button
-  const createGroupBtn = document.getElementById('create-group-btn');
-  if (createGroupBtn) {
-    createGroupBtn.addEventListener('click', createGroup);
+  logger.info('Application starting');
+  
+  // Initialize mobile interactions
+  if (window.MobileInteractions && typeof window.MobileInteractions.init === 'function') {
+    window.MobileInteractions.init();
+  } else {
+    logger.warn('MobileInteractions not available');
+  }
+  
+  // Initialize DataTables with custom settings for mobile
+  const $ = window.jQuery || window.$;
+  if ($ && $.fn && $.fn.dataTable) {
+    $('#shelf-table').DataTable({
+      responsive: true,
+      ordering: true,
+      paging: true,
+      searching: true,
+      info: true,
+      lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
+      language: {
+        emptyTable: "No shelves to inventory - add one to get started"
+      },
+      // Completely disable scroll handling in DataTables for mobile
+      // We'll handle scroll ourselves
+      scrollY: '',
+      scrollCollapse: false
+    });
   }
 });
 
@@ -1408,29 +1419,30 @@ const enhanceMobileUX = () => {
     });
   }
   
-  // Fix DataTables to allow content to spill in mobile view
-  if (window.shelfDataTable && window.innerWidth < 1024) {
-    setTimeout(() => {
-      window.shelfDataTable.columns.adjust();
-      
-      // Remove scroll limits
-      const tableWrapper = document.querySelector('.dataTables_wrapper');
-      if (tableWrapper) {
-        tableWrapper.style.overflow = 'visible';
+  // Add touch-specific classes to tell DataTables not to capture events
+  if (window.innerWidth < 1024) {
+    document.querySelectorAll('.lg\\:col-span-1').forEach(section => {
+      section.classList.add('dt-touch-disabled');
+    });
+    
+    // Fix DataTables to allow content to spill in mobile view
+    if (window.shelfDataTable) {
+      setTimeout(() => {
+        window.shelfDataTable.columns.adjust();
         
-        const scrollBody = tableWrapper.querySelector('.dataTables_scrollBody');
-        if (scrollBody) {
-          scrollBody.style.maxHeight = '';
-          scrollBody.style.overflow = 'visible';
+        // Remove scroll limits
+        const tableWrapper = document.querySelector('.dataTables_wrapper');
+        if (tableWrapper) {
+          tableWrapper.style.overflow = 'visible';
+          
+          const scrollBody = tableWrapper.querySelector('.dataTables_scrollBody');
+          if (scrollBody) {
+            scrollBody.style.maxHeight = '';
+            scrollBody.style.overflow = 'visible';
+          }
         }
-      }
-    }, 100);
-  }
-  
-  // Don't restrict body scrolling normally
-  if (!document.getElementById('custom-alert') || 
-      document.getElementById('custom-alert').classList.contains('hidden')) {
-    document.body.style.overflow = '';
+      }, 100);
+    }
   }
 };
 

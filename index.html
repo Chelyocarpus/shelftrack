@@ -70,6 +70,22 @@
         body.has-mobile-nav {
           padding-bottom: 80px;
         }
+        
+        /* Prevent DataTables from capturing touch events in non-table sections */
+        .dt-touch-disabled,
+        .touch-protected {
+          touch-action: auto !important;
+        }
+        
+        /* Styles for the active tab */
+        .mobile-tab-content:not(.active) {
+          display: none;
+        }
+        
+        /* Ensure the linked-shelves-container scrolls properly */
+        #linked-shelves-container {
+          -webkit-overflow-scrolling: touch;
+        }
       }
     </style>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📦</text></svg>">
