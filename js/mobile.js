@@ -247,14 +247,30 @@ const MobileInteractions = (() => {
     // Override the _fnDraw function to prevent table redraws during scrolling
     if (originalFnDraw) {
       $.fn.dataTable.ext.internal._fnDraw = function() {
-        // Only allow drawing when in table tab or not scrolling
-        if (activeTabId === 'mobile-table-btn' || (!isScrolling && !document.body.classList.contains('is-scrolling'))) {
-          return originalFnDraw.apply(this, arguments);
-        } else {
-          logger.debug('Prevented DataTables draw during scroll in non-table tab');
-          return;
+        const dtSettings = this; // 'this' is the DataTable settings object
+        const tableNode = dtSettings.nTable;
+        const tableId = tableNode ? tableNode.id : 'unknown_table';
+
+        // Condition 1: Not in table tab
+        if (activeTabId !== 'mobile-table-btn') {
+          logger.debug(`[DataTables _fnDraw Override - ${tableId}] Prevented draw: Not in table tab. Active tab: ${activeTabId}`);
+          return; // Do not draw if not in the table tab
         }
+
+        // Condition 2: Scrolling is active (either our detection or body class)
+        const isCurrentlyScrolling = isScrolling || document.body.classList.contains('is-scrolling');
+        if (isCurrentlyScrolling) {
+          logger.debug(`[DataTables _fnDraw Override - ${tableId}] Prevented draw: Scrolling active. Active tab: ${activeTabId}`);
+          return; // Do not draw if scrolling
+        }
+        
+        // If all checks pass, proceed with the original draw function
+        logger.debug(`[DataTables _fnDraw Override - ${tableId}] Allowing draw. Active tab: ${activeTabId}`);
+        return originalFnDraw.apply(this, arguments);
       };
+      logger.info('DataTables _fnDraw overridden for contextual drawing.');
+    } else {
+      logger.warn('Could not override DataTables _fnDraw: original function not found.');
     }
   };
   
@@ -269,67 +285,100 @@ const MobileInteractions = (() => {
     scrollableSections.forEach(section => {
       if (!section) return;
       
-      section.removeEventListener('touchstart', handleTouchStart);
-      section.removeEventListener('touchmove', handleTouchMove);
-      section.removeEventListener('touchend', handleTouchEnd);
+      section.removeEventListener('touchstart', handleProtectedTouchStart, { capture: true });
+      section.removeEventListener('touchmove', handleProtectedTouchMove, { capture: true });
+      section.removeEventListener('touchend', handleProtectedTouchEnd, { capture: true });
     });
     
     // Add touch event listeners to scrollable sections
     scrollableSections.forEach(section => {
       if (!section) return;
       
-      section.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
-      section.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
-      section.addEventListener('touchend', handleTouchEnd, { passive: false, capture: true });
+      section.addEventListener('touchstart', handleProtectedTouchStart, { passive: false, capture: true });
+      section.addEventListener('touchmove', handleProtectedTouchMove, { passive: false, capture: true });
+      section.addEventListener('touchend', handleProtectedTouchEnd, { passive: false, capture: true });
       
       // Add a visual indicator that this section has touch protection
       section.setAttribute('data-touch-protected', 'true');
       section.classList.add('touch-protected');
       
-      logger.debug(`Touch protection added to section: ${section.id || section.className}`);
+      logger.debug(`Touch protection (re)applied to section: ${section.id || section.tagName}.${section.className.split(' ')[0]}`);
     });
     
-    // If we're not in table view, add a global touch interceptor
+    // Manage 'current-mobile-tab' class for styling form sections
+    document.querySelectorAll('.current-mobile-tab').forEach(el => el.classList.remove('current-mobile-tab'));
     if (activeTabId !== 'mobile-table-btn') {
-      const formSection = document.querySelector('.lg\\:col-span-1');
-      if (formSection && !formSection.classList.contains('hidden')) {
-        // Add special class for CSS styling
-        formSection.classList.add('touch-protected');
-        formSection.classList.add('current-mobile-tab');
+      // Apply the current-mobile-tab class to the active panel
+      let activePanel;
+      if (activeTabId === 'mobile-add-btn') {
+        activePanel = document.querySelector('#shelf-form')?.closest('.bg-white');
+      } else if (activeTabId === 'mobile-groups-btn') {
+        activePanel = document.querySelector('#link-shelf-form')?.closest('.bg-white');
+      }
+
+      if (activePanel && !activePanel.classList.contains('hidden')) {
+        activePanel.classList.add('current-mobile-tab');
+      } else {
+        // Fallback if specific panel isn't found but form column is visible
+        const formSection = document.querySelector('.lg\\:col-span-1');
+        if (formSection && !formSection.classList.contains('hidden')) { 
+          formSection.classList.add('current-mobile-tab');
+        }
+      }
+    } else {
+      // If table tab is active, ensure table section has the class
+      const tableSection = document.querySelector('.lg\\:col-span-2');
+      if (tableSection) {
+        tableSection.classList.add('current-mobile-tab');
       }
     }
   };
   
   /**
-   * Handle touch start events
+   * Handle touch start events on protected sections
    * Use capture phase to intercept before DataTables
    */
-  const handleTouchStart = (event) => {
-    // Only stop propagation if we're not in the table tab
+  const handleProtectedTouchStart = (event) => {
+    const targetElement = event.currentTarget;
+    const targetId = targetElement.id || targetElement.tagName + '.' + (targetElement.className.split(' ')[0] || 'no-class');
+
     if (activeTabId !== 'mobile-table-btn') {
+      logger.debug(`[Protected Section TouchStart - ${targetId}] Stopping propagation. Active tab: ${activeTabId}`);
       event.stopPropagation();
+    } else {
+      logger.debug(`[Protected Section TouchStart - ${targetId}] Allowing event. Active tab: ${activeTabId}`);
     }
   };
   
   /**
-   * Handle touch move events
+   * Handle touch move events on protected sections
    * Use capture phase to intercept before DataTables
    */
-  const handleTouchMove = (event) => {
-    // Only stop propagation if we're not in the table tab
+  const handleProtectedTouchMove = (event) => {
+    const targetElement = event.currentTarget;
+    const targetId = targetElement.id || targetElement.tagName + '.' + (targetElement.className.split(' ')[0] || 'no-class');
+
     if (activeTabId !== 'mobile-table-btn') {
+      logger.debug(`[Protected Section TouchMove - ${targetId}] Stopping propagation. Active tab: ${activeTabId}`);
       event.stopPropagation();
+    } else {
+      logger.debug(`[Protected Section TouchMove - ${targetId}] Allowing event. Active tab: ${activeTabId}`);
     }
   };
   
   /**
-   * Handle touch end events
+   * Handle touch end events on protected sections
    * Use capture phase to intercept before DataTables
    */
-  const handleTouchEnd = (event) => {
-    // Only stop propagation if we're not in the table tab
+  const handleProtectedTouchEnd = (event) => {
+    const targetElement = event.currentTarget;
+    const targetId = targetElement.id || targetElement.tagName + '.' + (targetElement.className.split(' ')[0] || 'no-class');
+    
     if (activeTabId !== 'mobile-table-btn') {
+      logger.debug(`[Protected Section TouchEnd - ${targetId}] Stopping propagation. Active tab: ${activeTabId}`);
       event.stopPropagation();
+    } else {
+      logger.debug(`[Protected Section TouchEnd - ${targetId}] Allowing event. Active tab: ${activeTabId}`);
     }
   };
   
@@ -354,20 +403,30 @@ const MobileInteractions = (() => {
     // Extend DataTables settings for better mobile experience
     $.extend($.fn.dataTable.defaults, {
       responsive: true,
-      // Reduce sensitivity of touch scroll detection
       touchThreshold: 10, // Higher threshold means less sensitive
     });
     
     // Add a custom check to prevent touch handling when not in table view
-    const originalTouch = $.fn.dataTable.ext.features.touch;
-    if (originalTouch) {
+    const originalTouchFeatureInit = $.fn.dataTable.ext.features.touch;
+    if (originalTouchFeatureInit) {
       $.fn.dataTable.ext.features.touch = function() {
         // Only enable touch handling when in the table tab and not scrolling
-        if (activeTabId === 'mobile-table-btn' && !isScrolling && !document.body.classList.contains('is-scrolling')) {
-          return originalTouch.apply(this, arguments);
+        const dtSettings = arguments[0]; // First argument is the settings object
+        const tableNode = dtSettings.nTable;
+        const tableId = tableNode ? tableNode.id : 'unknown_table';
+        const isCurrentlyScrolling = isScrolling || document.body.classList.contains('is-scrolling');
+        
+        if (activeTabId === 'mobile-table-btn' && !isCurrentlyScrolling) {
+          logger.debug(`[DataTables Touch Feature - ${tableId}] Enabling touch features. Active tab: ${activeTabId}`);
+          return originalTouchFeatureInit.apply(this, arguments);
+        } else {
+          logger.debug(`[DataTables Touch Feature - ${tableId}] Suppressing touch features. Active tab: ${activeTabId}`);
+          return false; // Return false to disable the feature
         }
-        return false;
       };
+      logger.info('DataTables touch feature initialization overridden for contextual activation.');
+    } else {
+      logger.warn('Could not override DataTables touch feature: original function not found.');
     }
     
     logger.debug('DataTables mobile configuration applied with context awareness');
