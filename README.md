@@ -38,7 +38,3 @@ All data is stored locally in the browser using localStorage. No server connecti
 
 ## Browser Support
 Works in all modern browsers (Chrome, Firefox, Safari, Edge).
-
----
-
-*© 2023 ShelfTrack Pro*
