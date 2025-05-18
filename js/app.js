@@ -50,11 +50,23 @@ const toggleMobileAddPanel = (show = true) => {
       panel.classList.add('open');
       backdrop.classList.add('open');
       
-      // Set focus on the first input field
+      // Set focus on the first input field after a delay to allow animation to complete
       setTimeout(() => {
         const input = document.getElementById('mobile-shelf-number');
         if (input) {
-          input.focus();
+          // Set focus but don't scroll yet - we'll handle that separately
+          input.focus({preventScroll: true});
+          
+          // Manually scroll to make the input visible with extra padding for keyboard
+          setTimeout(() => {
+            // Scroll the panel to show the input
+            const panelRect = panel.getBoundingClientRect();
+            const inputRect = input.getBoundingClientRect();
+            
+            // Calculate how much to scroll to get input in viewport center
+            const scrollAmount = inputRect.top - (window.innerHeight / 3);
+            panel.scrollTop += scrollAmount;
+          }, 100);
         }
       }, 300);
       
@@ -72,6 +84,9 @@ const toggleMobileAddPanel = (show = true) => {
       } else {
         document.body.style.overflow = '';
       }
+      
+      // Reset scroll position for next time the panel opens
+      panel.scrollTop = 0;
     }
   }
 };
@@ -344,8 +359,44 @@ const removeShelf = (shelf) => {
     html: true,
     isConfirm: true,
     onConfirm: () => {
+      // Store the linked shelves before removing, to mention in the confirmation message
+      const linkedShelves = getLinkedShelves(shelf);
+      
+      // First remove the shelf from any groups it belongs to
+      removeShelfFromGroup(shelf);
+      
+      // Then delete it from the shelves object
       delete shelves[shelf];
-      saveAndRender();
+      
+      // Save changes to local storage and re-render the UI
+      saveShelves(shelves);
+      
+      // Properly clean up groups that might now be invalid
+      cleanupGroups(shelves);
+      
+      // Show confirmation with details
+      window.utils.showAlert(`
+        <div class="flex items-start">
+          <i class="fas fa-check-circle h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Success!</span>
+            <p>Shelf <span class="font-mono font-medium">${shelf}</span> was removed.</p>
+            ${linkedShelves.length ? `<p class="mt-1 text-sm">This shelf was also removed from its group.</p>` : ''}
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        alertType: 'success',
+        autoClose: 2000
+      });
+      
+      // Re-render the table after the shelf is removed
+      renderTable();
+      
+      // Update mobile view if it exists
+      if (window.MobileInteractions?.refreshData) {
+        window.MobileInteractions.refreshData();
+      }
     }
   });
 };
@@ -489,7 +540,6 @@ const updateDashboard = (shelfData) => {
   }
 };
 
-// Enhanced renderTable function to allow table to spill instead of scroll
 const renderTable = () => {
   // Prepare data for DataTable with raw dates and links
   const groups = loadGroups();
@@ -1448,9 +1498,38 @@ document.addEventListener('DOMContentLoaded', () => {
 const setupShelfForm = (formElement) => {
   if (!formElement) return;
   
+  // Add focus handler to scroll to the focused input
+  const inputs = formElement.querySelectorAll('input, select, textarea');
+  inputs.forEach(input => {
+    input.addEventListener('focus', () => {
+      // If this is a mobile form
+      if (formElement.id === 'mobile-shelf-form') {
+        // Get the panel
+        const panel = document.getElementById('mobile-add-panel');
+        if (!panel) return;
+        
+        // Give time for keyboard to appear
+        setTimeout(() => {
+          // Calculate position to scroll input into middle of visible area
+          const inputRect = input.getBoundingClientRect();
+          const panelRect = panel.getBoundingClientRect();
+          
+          // Calculate the amount to scroll to put the input in the middle
+          // 80px adds padding to account for keyboard
+          const scrollAmount = inputRect.top - panelRect.top - (panelRect.height / 3) + panel.scrollTop;
+          
+          // Smoothly scroll to the input
+          panel.scrollTo({
+            top: scrollAmount,
+            behavior: 'smooth'
+          });
+        }, 300); // Wait for keyboard to appear
+      }
+    });
+  });
+  
   formElement.addEventListener('submit', (e) => {
     e.preventDefault();
-    
     // Determine if this is mobile form
     const isMobile = formElement.id === 'mobile-shelf-form';
     const shelfInput = isMobile ? 

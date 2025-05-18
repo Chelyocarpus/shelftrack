@@ -125,17 +125,26 @@
         }
         
         .mobile-action-panel {
-          transform: translateY(20px);
+          transform: translateY(100%);  /* Start fully off-screen */
           opacity: 0;
           transition: transform 0.3s ease, opacity 0.3s ease;
           pointer-events: none;
           z-index: 40;
+          max-height: 90vh;
+          overflow-y: auto;
+          height: auto;
+          overscroll-behavior: contain;
         }
         
         .mobile-action-panel.open {
-          transform: translateY(0);
+          transform: translateY(0);  /* Move to visible position */
           opacity: 1;
           pointer-events: auto;
+        }
+        
+        /* Add padding at the bottom to ensure content is visible above keyboard */
+        .mobile-form-container {
+          padding-bottom: 120px;
         }
         
         .mobile-backdrop {
@@ -356,61 +365,66 @@
     </div>
     
     <!-- Mobile Add Panel -->
-    <div id="mobile-add-panel" class="mobile-action-panel fixed inset-x-0 bottom-0 bg-white rounded-t-xl shadow-lg p-6 md:hidden">
-      <div class="flex items-center justify-between mb-4">
+    <div id="mobile-add-panel" class="mobile-action-panel fixed inset-x-0 bottom-0 bg-white rounded-t-xl shadow-lg md:hidden">
+      <div class="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
         <h2 class="text-xl font-semibold text-primary-600">Add New Shelf</h2>
-        <button id="mobile-close-panel" class="text-gray-500 hover:text-gray-700">
+        <button id="mobile-close-panel" class="text-gray-500 hover:text-gray-700 p-2">
           <i class="fas fa-times text-xl"></i>
         </button>
       </div>
       
-      <form id="mobile-shelf-form" class="flex flex-col gap-4" autocomplete="off">
-        <div>
-          <label for="mobile-shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>
-          <input id="mobile-shelf-number" name="shelf-number" type="text" pattern="[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}" 
-            required aria-describedby="mobile-shelf-format" 
-            class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
-            placeholder="E.g. ABC-12.345" />
-          <span id="mobile-shelf-format" class="text-sm text-gray-500 mt-2 block">Format: 3 letters/numbers - 2 numbers . 3 numbers</span>
-        </div>
-        
-        <div>
-          <label for="mobile-inventory-date" class="font-medium text-gray-700 block mb-2">Inventory Date:</label>
-          <input id="mobile-inventory-date" name="inventory-date" type="date" required 
-            class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" />
-        </div>
-        
-        <button type="submit" 
-          class="bg-primary-600 text-white rounded-full px-6 py-3 text-base font-semibold hover:bg-primary-700 active:bg-primary-800 focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 transition-colors mt-4">
-          Save Shelf
-        </button>
-      </form>
+      <div class="p-4 mobile-form-container">
+        <form id="mobile-shelf-form" class="flex flex-col gap-4" autocomplete="off">
+          <div>
+            <label for="mobile-shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>
+            <input id="mobile-shelf-number" name="shelf-number" type="text" pattern="[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}" 
+              required aria-describedby="mobile-shelf-format" 
+              class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
+              placeholder="E.g. ABC-12.345" />
+            <span id="mobile-shelf-format" class="text-sm text-gray-500 mt-2 block">Format: 3 letters/numbers - 2 numbers . 3 numbers</span>
+          </div>
+          
+          <div>
+            <label for="mobile-inventory-date" class="font-medium text-gray-700 block mb-2">Inventory Date:</label>
+            <input id="mobile-inventory-date" name="inventory-date" type="date" required 
+              class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" />
+          </div>
+          
+          <button type="submit" 
+            class="bg-primary-600 text-white rounded-full px-6 py-3 text-base font-semibold hover:bg-primary-700 active:bg-primary-800 focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 transition-colors mt-4">
+            Save Shelf
+          </button>
+        </form>
+      </div>
     </div>
     
-    <!-- Mobile Groups Panel - NEW -->
-    <div id="mobile-groups-panel" class="mobile-action-panel fixed inset-x-0 bottom-0 bg-white rounded-t-xl shadow-lg p-6 md:hidden">
-      <div class="flex items-center justify-between mb-4">
+    <!-- Mobile Groups Panel - Similar structure for consistency -->
+    <div id="mobile-groups-panel" class="mobile-action-panel fixed inset-x-0 bottom-0 bg-white rounded-t-xl shadow-lg md:hidden">
+      <div class="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
         <h2 class="text-xl font-semibold text-primary-600">Shelf Groups</h2>
         <button id="mobile-close-groups-panel" class="text-gray-500 hover:text-gray-700 p-2">
           <i class="fas fa-times text-xl"></i>
         </button>
       </div>
       
-      <div class="flex justify-between mb-4">
-        <p class="text-sm text-gray-600">Group shelves that contain the same products.</p>
-        <button id="mobile-create-group-btn" 
-          class="text-sm bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-700 flex items-center gap-1 transition-colors"
-          aria-label="Create new group">
-          <i class="fas fa-plus h-4 w-4" aria-hidden="true"></i>
-          <span>New Group</span>
-        </button>
-      </div>
-      
-      <div id="mobile-linked-shelves-container" class="border rounded p-2 bg-gray-50 max-h-96 overflow-auto">
-        <!-- Linked shelves will be shown here, same content as desktop -->
+      <div class="p-4">
+        <div class="flex justify-between mb-4">
+          <p class="text-sm text-gray-600">Group shelves that contain the same products.</p>
+          <button id="mobile-create-group-btn" 
+            class="text-sm bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-700 flex items-center gap-1 transition-colors"
+            aria-label="Create new group">
+            <i class="fas fa-plus h-4 w-4" aria-hidden="true"></i>
+            <span>New Group</span>
+          </button>
+        </div>
+        
+        <div id="mobile-linked-shelves-container" class="border rounded p-2 bg-gray-50 max-h-96 overflow-auto">
+          <!-- Linked shelves will be shown here, same content as desktop -->
+        </div>
       </div>
     </div>
     
+    <!-- Mobile backdrop with correct z-index -->
     <div id="mobile-backdrop" class="mobile-backdrop md:hidden"></div>
     
     <!-- Custom Alert Dialog -->
@@ -418,8 +432,16 @@
       <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full mx-4 border-l-4 border-blue-500 transition-all">
         <h3 class="text-lg font-semibold text-gray-800 mb-2">Notification</h3>
         <p id="alert-message" class="text-gray-600 mb-4"></p>
-        <div class="flex justify-end gap-2">
-          <button id="alert-ok-btn" class="bg-primary-600 text-white rounded px-4 py-2 text-sm font-semibold hover:bg-primary-700 focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 transition-colors">
+        <div class="flex justify-end gap-3">
+          <div id="confirm-buttons" class="hidden flex gap-2">
+            <button id="cancel-action" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 focus:ring-2 focus:ring-gray-300 focus:outline-none transition-colors">
+              Cancel
+            </button>
+            <button id="confirm-action" class="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 focus:ring-2 focus:ring-primary-400 focus:outline-none transition-colors">
+              Confirm
+            </button>
+          </div>
+          <button id="alert-close" class="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 focus:ring-2 focus:ring-primary-400 focus:outline-none transition-colors">
             OK
           </button>
         </div>
