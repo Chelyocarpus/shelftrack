@@ -125,43 +125,59 @@
         }
         
         .mobile-action-panel {
-          transform: translateY(100%);  /* Start fully off-screen */
+          /* Start fully off-screen */
+          transform: translateY(100%);
           opacity: 0;
           transition: transform 0.3s ease, opacity 0.3s ease;
           pointer-events: none;
           z-index: 40;
-          max-height: 90vh;
+          /* Allow panel to be taller than viewport and scroll */
+          max-height: 85vh;
           overflow-y: auto;
-          height: auto;
+          /* Handle overflow properly */
           overscroll-behavior: contain;
         }
         
         .mobile-action-panel.open {
-          transform: translateY(0);  /* Move to visible position */
+          transform: translateY(0);
           opacity: 1;
           pointer-events: auto;
         }
         
-        /* Add padding at the bottom to ensure content is visible above keyboard */
+        /* Make the mobile panel's content not shift when keyboard appears */
+        .keyboard-open .mobile-action-panel {
+          /* Adjust behavior when keyboard is open */
+          position: absolute;
+          height: auto;
+          bottom: auto;
+          top: 10vh; /* Position from top instead of bottom */
+          max-height: 80vh;
+        }
+        
+        /* Increase form padding to ensure all content is accessible with keyboard open */
         .mobile-form-container {
-          padding-bottom: 120px;
+          padding-bottom: 200px; /* Extra space at bottom for keyboard */
         }
         
-        .mobile-backdrop {
-          position: fixed;
-          inset: 0;
-          background-color: rgba(0, 0, 0, 0.5);
-          opacity: 0;
-          visibility: hidden;
-          transition: opacity 0.3s ease;
-          z-index: 20;
+        /* Style for modal when keyboard is open */
+        body.keyboard-open .mobile-backdrop {
+          position: absolute;
+          height: 200vh; /* Extend backdrop beyond viewport */
         }
-        
-        .mobile-backdrop.open {
-          opacity: 1;
-          visibility: visible;
+
+        /* Keep fixed buttons visible above keyboard */
+        body.keyboard-open .mobile-action-container {
+          position: absolute;
+          z-index: 60;
         }
-        
+
+        /* Touch-friendly form controls with extra padding */
+        .keyboard-friendly-input {
+          font-size: 16px; /* Prevent iOS zoom */
+          padding: 12px;
+          margin-bottom: 16px;
+        }
+
         /* Bottom navigation bar styles */
         .mobile-bottom-nav {
           position: fixed;

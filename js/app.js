@@ -50,43 +50,47 @@ const toggleMobileAddPanel = (show = true) => {
       panel.classList.add('open');
       backdrop.classList.add('open');
       
-      // Set focus on the first input field after a delay to allow animation to complete
+      // Reset scroll position when opening
+      panel.scrollTop = 0;
+      
+      // Mark document for mobile positioning
+      if ('ontouchstart' in window) {
+        document.documentElement.classList.add('mobile-panel-open');
+      }
+      
+      // Set focus on first input after animation completes
       setTimeout(() => {
         const input = document.getElementById('mobile-shelf-number');
         if (input) {
-          // Set focus but don't scroll yet - we'll handle that separately
+          // Focus but don't scroll yet
           input.focus({preventScroll: true});
-          
-          // Manually scroll to make the input visible with extra padding for keyboard
-          setTimeout(() => {
-            // Scroll the panel to show the input
-            const panelRect = panel.getBoundingClientRect();
-            const inputRect = input.getBoundingClientRect();
-            
-            // Calculate how much to scroll to get input in viewport center
-            const scrollAmount = inputRect.top - (window.innerHeight / 3);
-            panel.scrollTop += scrollAmount;
-          }, 100);
         }
       }, 300);
       
-      // Store the original overflow value before changing it
+      // Store the original overflow value
       document.body.dataset.originalOverflow = document.body.style.overflow;
-      // Prevent body scrolling
       document.body.style.overflow = 'hidden';
     } else {
+      // Remove keyboard-open class when closing panel
+      document.body.classList.remove('keyboard-open');
+      document.documentElement.classList.remove('mobile-panel-open');
+      
       panel.classList.remove('open');
       backdrop.classList.remove('open');
       
-      // Restore body scrolling using the stored value
+      // Restore body scrolling
       if (document.body.dataset.originalOverflow) {
         document.body.style.overflow = document.body.dataset.originalOverflow;
       } else {
         document.body.style.overflow = '';
       }
       
-      // Reset scroll position for next time the panel opens
-      panel.scrollTop = 0;
+      // Reset panel scroll position after closing animation
+      setTimeout(() => {
+        if (!panel.classList.contains('open')) {
+          panel.scrollTop = 0;
+        }
+      }, 300);
     }
   }
 };
@@ -1498,33 +1502,61 @@ document.addEventListener('DOMContentLoaded', () => {
 const setupShelfForm = (formElement) => {
   if (!formElement) return;
   
-  // Add focus handler to scroll to the focused input
+  // Add touch-friendly classes to form inputs
   const inputs = formElement.querySelectorAll('input, select, textarea');
   inputs.forEach(input => {
+    input.classList.add('keyboard-friendly-input');
+    
+    // Handle virtual keyboard appearance
     input.addEventListener('focus', () => {
       // If this is a mobile form
       if (formElement.id === 'mobile-shelf-form') {
+        // Mark body for keyboard styling
+        document.body.classList.add('keyboard-open');
+        
         // Get the panel
         const panel = document.getElementById('mobile-add-panel');
         if (!panel) return;
         
-        // Give time for keyboard to appear
+        // Calculate best position for the input to be visible
         setTimeout(() => {
-          // Calculate position to scroll input into middle of visible area
+          // Determine if input is likely covered by keyboard
           const inputRect = input.getBoundingClientRect();
-          const panelRect = panel.getBoundingClientRect();
+          const viewportHeight = window.visualViewport ? 
+            window.visualViewport.height : window.innerHeight;
           
-          // Calculate the amount to scroll to put the input in the middle
-          // 80px adds padding to account for keyboard
-          const scrollAmount = inputRect.top - panelRect.top - (panelRect.height / 3) + panel.scrollTop;
-          
-          // Smoothly scroll to the input
-          panel.scrollTo({
-            top: scrollAmount,
-            behavior: 'smooth'
-          });
+          // If input is in lower third of screen, scroll to make it visible
+          if (inputRect.bottom > (viewportHeight * 0.7)) {
+            // Scroll the input into view with buffer
+            input.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center'
+            });
+            
+            // Ensure the panel itself scrolls as needed
+            const scrollAmount = inputRect.top - 100; // 100px buffer
+            
+            if (scrollAmount > 0) {
+              panel.scrollTo({
+                top: scrollAmount,
+                behavior: 'smooth'
+              });
+            }
+          }
         }, 300); // Wait for keyboard to appear
       }
+    });
+    
+    // Detect when focus leaves input to restore normal view
+    input.addEventListener('blur', () => {
+      // Short delay to avoid immediate removal during tab navigation
+      setTimeout(() => {
+        // Only remove keyboard-open class if no inputs are focused
+        if (!document.activeElement || 
+            !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+          document.body.classList.remove('keyboard-open');
+        }
+      }, 100);
     });
   });
   

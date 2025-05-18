@@ -240,5 +240,64 @@
     }, maxAttempts);
   };
 
-  window.utils = { debounce, batchRequests, showAlert, waitForElement, scrollToElement };
+  const detectVirtualKeyboard = (() => {
+    // Visual viewport API for detecting keyboard
+    let keyboardOpen = false;
+    let initialViewportHeight = window.innerHeight;
+    
+    // For iOS and Android
+    const detectKeyboardChange = () => {
+      // Visual Viewport API (modern browsers)
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', () => {
+          const currentHeight = window.visualViewport.height;
+          // If height decreased significantly, keyboard likely opened
+          if (initialViewportHeight > currentHeight && initialViewportHeight - currentHeight > 150) {
+            document.body.classList.add('keyboard-open');
+            keyboardOpen = true;
+          } else {
+            document.body.classList.remove('keyboard-open');
+            keyboardOpen = false;
+          }
+        });
+      } else {
+        // Fallback for browsers without Visual Viewport API
+        window.addEventListener('resize', () => {
+          const currentHeight = window.innerHeight;
+          if (initialViewportHeight > currentHeight && initialViewportHeight - currentHeight > 150) {
+            document.body.classList.add('keyboard-open');
+            keyboardOpen = true;
+          } else {
+            document.body.classList.remove('keyboard-open');
+            keyboardOpen = false;
+          }
+        });
+      }
+    };
+
+    return {
+      init: () => {
+        // Store initial height on page load
+        initialViewportHeight = window.innerHeight;
+        detectKeyboardChange();
+      },
+      isKeyboardOpen: () => keyboardOpen
+    };
+  })();
+
+  // Initialize keyboard detection
+  if (typeof window !== 'undefined' && 'ontouchstart' in window) {
+    window.addEventListener('DOMContentLoaded', () => {
+      detectVirtualKeyboard.init();
+    });
+  }
+
+  window.utils = { 
+    debounce, 
+    batchRequests, 
+    showAlert, 
+    waitForElement, 
+    scrollToElement,
+    detectVirtualKeyboard 
+  };
 })();
