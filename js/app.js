@@ -675,7 +675,7 @@ const renderTable = (options = {}) => {
       columns: [
         { 
           data: 'shelf',
-          className: 'px-4 py-3 font-mono',
+          className: 'px-4 py-3 font-mono', // This className applies to <td> cells
           render: function(data, type, row) {
             // Show link icon if shelf has links
             // Also show the status label below the shelf code
@@ -710,8 +710,13 @@ const renderTable = (options = {}) => {
         },
         { 
           data: null,
-          className: 'px-4 py-3 text-sm editable-date cursor-pointer underline decoration-dotted decoration-primary-400 transition-colors focus:bg-primary-100',
-          render: function(data) {
+          className: 'px-4 py-3 text-sm editable-date cursor-pointer underline decoration-dotted decoration-primary-400 transition-colors focus:bg-primary-100', // This className applies to <td> cells
+          render: function(data, type) {
+            // For sorting and filtering, use the ISO date format
+            if (type === 'sort' || type === 'type' || type === 'filter') {
+              return data.date;
+            }
+            
             // Only show the date value with its edit icon - status moved to shelf column
             let statusClass = '';
             
@@ -731,7 +736,7 @@ const renderTable = (options = {}) => {
         },
         {
           data: 'shelf',
-          className: 'px-4 py-3',
+          className: 'px-4 py-3', // This className applies to <td> cells
           render: function(shelf) {
             return `
               <div class="flex">
@@ -749,7 +754,7 @@ const renderTable = (options = {}) => {
           }
         }
       ],
-      // Use raw date for sorting
+      // Update the order to explicitly use the raw date column for sorting
       order: [[1, 'asc']],
       createdRow: function(row, data) {
         // Add data attribute for shelf identification
@@ -807,7 +812,8 @@ const renderTable = (options = {}) => {
       columnDefs: [
         { orderable: true, targets: [0, 1] },
         { orderable: false, targets: 2 },
-        { searchable: false, targets: 2 }
+        { searchable: false, targets: 2 },
+        { type: 'date-iso', targets: 1 } // Changed 'date' to 'date-iso'
       ],
       language: {
         search: 'Search:',
@@ -821,12 +827,7 @@ const renderTable = (options = {}) => {
       },
       // Remove scrollY and scrollCollapse to let table content spill
       scrollY: '',
-      scrollCollapse: false,      initComplete: function() {
-        // Add custom styling to DataTables elements
-        jq('.dataTables_length select').addClass('border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400');
-        jq('.dataTables_filter input').addClass('border rounded px-3 py-1 ml-2 focus:outline-none focus:ring-1 focus:ring-primary-400');
-        jq('.dataTables_paginate .paginate_button').addClass('px-3 py-1 border rounded mx-1 hover:bg-gray-100');
-        jq('.dataTables_paginate .paginate_button.current').addClass('bg-primary-50 text-primary-700 border-primary-300');
+      scrollCollapse: false,      initComplete: function() { 
         
         // Clean up stale recently added shelves (older than 30 seconds)
         recentlyAddedShelves = recentlyAddedShelves.filter(item => 
@@ -1882,7 +1883,7 @@ const setupShelfForm = (formElement) => {
       if (shelves[shelf]) {
         showAlert(`
           <div class="flex items-start">
-            <i class="fas fa-exclamation-triangle h-6 w-6 text-yellow-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
+            <i class="fas fa-exclamationtriangle h-6 w-6 text-yellow-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
             <div>
               <span class="font-medium">Duplicate Entry!</span>
               <p>Shelf <span class="font-mono font-medium">${shelf}</span> already exists with date ${formatDateDisplay(shelves[shelf])}.</p>
@@ -1892,6 +1893,7 @@ const setupShelfForm = (formElement) => {
         `, { 
           html: true, 
           alertType: 'warning',
+         
           isConfirm: true,
           confirmText: 'Update',
           onConfirm: () => {
