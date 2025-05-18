@@ -3,6 +3,11 @@
   const STORAGE_KEY = 'shelfInventory';
   const GROUPS_KEY = 'shelfGroups'; // Changed from LINKS_KEY to GROUPS_KEY
 
+  // Add support for cloud storage with fallback to localStorage
+  const useCloudStorage = () => {
+    return window.gistdb && window.gistdb.isEnabled();
+  };
+
   const loadShelves = () => {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
@@ -16,8 +21,25 @@
   const saveShelves = (shelves) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(shelves));
+      
+      // If cloud sync is enabled AND auto backup is enabled, update Gist immediately
+      if (useCloudStorage() && window.gistdb.getConfig().autoBackup) {
+        const syncPromise = window.gistdb.pushData().catch(err => {
+          window.logger.log({ 
+            level: 'error', 
+            message: 'Failed to sync shelves to cloud', 
+            error: err 
+          });
+        });
+        
+        // Return promise for async operations
+        return syncPromise;
+      }
+      
+      return Promise.resolve(true);
     } catch (e) {
       window.logger.log({ level: 'error', message: 'Failed to save shelves', error: e });
+      return Promise.reject(e);
     }
   };
 
@@ -41,8 +63,25 @@
   const saveGroups = (groups) => {
     try {
       localStorage.setItem(GROUPS_KEY, JSON.stringify(groups));
+      
+      // If cloud sync is enabled AND auto backup is enabled, update Gist immediately
+      if (useCloudStorage() && window.gistdb.getConfig().autoBackup) {
+        const syncPromise = window.gistdb.pushData().catch(err => {
+          window.logger.log({ 
+            level: 'error', 
+            message: 'Failed to sync groups to cloud', 
+            error: err 
+          });
+        });
+        
+        // Return promise for async operations
+        return syncPromise;
+      }
+      
+      return Promise.resolve(true);
     } catch (e) {
       window.logger.log({ level: 'error', message: 'Failed to save shelf groups', error: e });
+      return Promise.reject(e);
     }
   };
 
@@ -228,11 +267,53 @@
     }
   };
 
+  // New function to sync with cloud storage
+  const syncWithCloud = async () => {
+    if (!useCloudStorage()) {
+      return { success: false, message: 'Cloud storage is not enabled' };
+    }
+    
+    try {
+      // Pull data from cloud
+      const cloudData = await window.gistdb.pullData();
+      
+      window.logger.log({ 
+        level: 'info', 
+        message: 'Successfully synced with cloud storage', 
+        data: cloudData 
+      });
+      
+      return { success: true, data: cloudData };
+    } catch (error) {
+      window.logger.log({ 
+        level: 'error', 
+        message: 'Failed to sync with cloud storage', 
+        error 
+      });
+      
+      return { success: false, error, message: error.message };
+    }
+  };
+
+  // Configure cloud storage
+  const configureCloudStorage = () => {
+    if (window.gistdb) {
+      window.gistdb.showConfigForm();
+    } else {
+      window.logger.log({ 
+        level: 'error', 
+        message: 'Cloud storage module is not available' 
+      });
+    }
+  };
+
   window.storage = { 
     loadShelves, saveShelves, 
     loadGroups, saveGroups, 
     linkShelves, linkShelfPair, unlinkShelves, 
     getLinkedShelves, cleanupGroups, removeShelfFromGroup,
-    getAllGroups, getGroupForShelf, setGroupName
+    getAllGroups, getGroupForShelf, setGroupName,
+    // New cloud storage functions
+    syncWithCloud, configureCloudStorage
   };
 })();

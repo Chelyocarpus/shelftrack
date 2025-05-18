@@ -1,7 +1,7 @@
 // Simple configurable logger
 (() => {
   // Default log level (can be overridden)
-  let logLevel = 'info';
+  let logLevel = 'debug';
   
   // Map log levels to numeric values for comparison
   const LOG_LEVELS = {

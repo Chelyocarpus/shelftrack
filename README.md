@@ -28,10 +28,7 @@ ShelfTrack helps warehouse and retail staff efficiently manage inventory schedul
 4. Group related shelves for easier management
 
 ## Shelf Format
-Shelf numbers follow the format: `XXX-XX.XXX` (e.g., ABC-12.345)
-- First part: 3 letters/numbers
-- Second part: 2 digits
-- Third part: 3 digits
+Shelves can be named using any format that works for your inventory system. There are no restrictions on shelf names.
 
 ## Data Storage
 All data is stored locally in the browser using localStorage. No server connection required.

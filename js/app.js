@@ -137,8 +137,14 @@ const toggleMobileGroupsPanel = (show = true) => {
   }
 };
 
-// Modified to sync dates across linked shelves
+// Modified to sync dates across linked shelves and backup to gist
 const saveAndRender = debounce(() => {
+  // Save current page if available
+  let currentPage = 0;
+  if (window.shelfDataTable) {
+    currentPage = window.shelfDataTable.page();
+  }
+  
   // Before saving, ensure all linked shelves have the same most recent date
   const groups = getAllGroups();
   groups.forEach(group => {
@@ -163,12 +169,53 @@ const saveAndRender = debounce(() => {
     }
   });
 
-  saveShelves(shelves);
+  // Save to localStorage
+  const savePromise = saveShelves(shelves);
   cleanupGroups(shelves);
-  renderTable();
+  
+  // Update UI while preserving the current page
+  renderTable({ preservePage: true });
+  
+  // Show backup indicator if cloud sync is enabled
+  if (window.gistdb?.isEnabled()) {
+    updateBackupStatus('syncing');
+    
+    // Wait for the save promise to complete
+    savePromise.then(() => {
+      setTimeout(() => {
+        updateBackupStatus('success');
+      }, 1000); // Show success after a delay
+    }).catch(error => {
+      log({ level: 'error', message: 'Auto-backup to Gist failed', error });
+      updateBackupStatus('error');
+    });
+  }
   
   log({ level: 'info', message: 'Shelves updated', shelves });
 }, 200);
+
+// Function to update the backup status indicator
+const updateBackupStatus = (status) => {
+  const indicator = document.getElementById('gist-status-indicator');
+  if (!indicator) return;
+  
+  // Remove all status classes first
+  indicator.classList.remove('bg-gray-500', 'bg-green-500', 'bg-red-500', 'bg-yellow-500', 'animate-pulse');
+  
+  switch (status) {
+    case 'syncing':
+      indicator.classList.add('bg-yellow-500', 'animate-pulse');
+      break;
+    case 'success':
+      indicator.classList.add('bg-green-500');
+      break;
+    case 'error':
+      indicator.classList.add('bg-red-500');
+      break;
+    default:
+      indicator.classList.add('bg-gray-500');
+  }
+};
 
 shelfForm.addEventListener('submit', (e) => {
   e.preventDefault();
@@ -178,15 +225,18 @@ shelfForm.addEventListener('submit', (e) => {
   const date = dateInput.value;
 
   try {
-    // Validate input
-    if (!/^[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}$/.test(shelf)) {
-      showAlert('Shelf number format is invalid.', { 
-        html: true, 
-        isConfirm: false,
-        alertType: 'error'
-      });
+    // HTML5 validation will handle empty values through the required attribute,
+    // so this check is only needed for whitespace-only or additional validation
+    if (shelf.length === 0) {
+      // Let the built-in HTML5 validation handle empty values
+      // This shouldn't execute due to the required attribute, but just in case
+      shelfInput.setCustomValidity('Shelf name cannot be empty');
+      shelfInput.reportValidity();
       return;
     }
+    
+    // Clear any previous custom validation message
+    shelfInput.setCustomValidity('');
 
     // Check if shelf already exists and show duplicate error
     if (shelves[shelf]) {
@@ -363,6 +413,13 @@ const removeShelf = (shelf) => {
     html: true,
     isConfirm: true,
     onConfirm: () => {
+      // Store the current page before removal
+      let currentPage = 0;
+      if (window.shelfDataTable) {
+        currentPage = window.shelfDataTable.page();
+        log({ level: 'info', message: `Storing current page ${currentPage} before shelf removal` });
+      }
+      
       // Store the linked shelves before removing, to mention in the confirmation message
       const linkedShelves = getLinkedShelves(shelf);
       
@@ -394,8 +451,8 @@ const removeShelf = (shelf) => {
         autoClose: 2000
       });
       
-      // Re-render the table after the shelf is removed
-      renderTable();
+      // Re-render the table after the shelf is removed, preserving the current page
+      renderTable({ preservePage: true });
       
       // Update mobile view if it exists
       if (window.MobileInteractions?.refreshData) {
@@ -544,7 +601,7 @@ const updateDashboard = (shelfData) => {
   }
 };
 
-const renderTable = () => {
+const renderTable = (options = {}) => {
   // Prepare data for DataTable with raw dates and links
   const groups = loadGroups();
   const shelfArr = getShelvesArray().map(([shelf, date]) => {
@@ -560,6 +617,9 @@ const renderTable = () => {
       links: linkedShelves
     };
   });
+  
+  // Save current page info if we need to preserve it
+  const currentPage = options.preservePage && window.shelfDataTable ? window.shelfDataTable.page() : null;
 
   // Update the dashboard with the current data
   updateDashboard(shelfArr);
@@ -731,8 +791,7 @@ const renderTable = () => {
       },
       // Remove scrollY and scrollCollapse to let table content spill
       scrollY: '',
-      scrollCollapse: false,
-      initComplete: function() {
+      scrollCollapse: false,      initComplete: function() {
         // Add custom styling to DataTables elements
         jq('.dataTables_length select').addClass('border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400');
         jq('.dataTables_filter input').addClass('border rounded px-3 py-1 ml-2 focus:outline-none focus:ring-1 focus:ring-primary-400');
@@ -746,6 +805,17 @@ const renderTable = () => {
 
         // Use event delegation for date editing instead of attaching to each cell
         setupDateEditingWithDelegation();
+        
+        // Restore page position if needed
+        if (currentPage !== null && currentPage >= 0) {
+          const maxPage = this.api().page.info().pages - 1;
+          // Make sure we don't try to restore to a page that no longer exists
+          const validPage = Math.min(currentPage, maxPage);
+          if (validPage >= 0) {
+            this.api().page(validPage).draw('page');
+            log({ level: 'info', message: `Restored table to page ${validPage}` });
+          }
+        }
       },
       // Add a custom order to prioritize expired shelves first
       rowCallback: function(row, data) {
@@ -1458,10 +1528,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
-  // Set up desktop form
-  setupShelfForm(shelfForm);
+  // Set up desktop form - FIX: Only set up if element exists
+  if (shelfForm) {
+    setupShelfForm(shelfForm);
+  }
   
-  // Set up mobile form
+  // Set up mobile form - FIX: Only set up if element exists
   const mobileShelfForm = document.getElementById('mobile-shelf-form');
   if (mobileShelfForm) {
     setupShelfForm(mobileShelfForm);
@@ -1469,6 +1541,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Set up mobile add panel
   setupMobileAddPanel();
+  
+  // Set up cloud sync button
+  setupCloudSyncButton();
   
   renderTable();
   renderLinkOptions(); // Ensure options are populated on page load
@@ -1559,8 +1634,7 @@ const setupShelfForm = (formElement) => {
       }, 100);
     });
   });
-  
-  formElement.addEventListener('submit', (e) => {
+    formElement.addEventListener('submit', (e) => {
     e.preventDefault();
     // Determine if this is mobile form
     const isMobile = formElement.id === 'mobile-shelf-form';
@@ -1571,20 +1645,61 @@ const setupShelfForm = (formElement) => {
       document.getElementById('mobile-inventory-date') : 
       document.getElementById('inventory-date');
     
+    // FIX: Check if inputs exist before trying to get their values
+    if (!shelfInput || !dateInput) {
+      log({ level: 'error', message: 'Form inputs not found', formId: formElement.id });
+      return;
+    }
+    
+    // Pre-validate to catch empty or whitespace-only inputs
+    if (!shelfInput.value || !shelfInput.value.trim()) {
+      // HTML5 validation should catch this, but as a backup:
+      shelfInput.value = ''; // Clear to trigger native validation on next attempt
+      shelfInput.focus();
+      
+      // Report the validation issue programmatically
+      shelfInput.setCustomValidity('Shelf name cannot be empty. Please enter a valid shelf identifier.');
+      shelfInput.reportValidity();
+      return;
+    } else {
+      // Reset any previous validation message
+      shelfInput.setCustomValidity('');
+    }
+      // Check for empty input before trimming
+    if (!shelfInput.value || !shelfInput.value.trim()) {
+      showAlert(`
+        <div class="flex items-start">
+          <i class="fas fa-exclamation-circle h-6 w-6 text-red-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Validation Error</span>
+            <p>Shelf name cannot be empty. Please enter a valid shelf identifier.</p>
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        isConfirm: false,
+        alertType: 'error'
+      });
+      
+      // Clear the input to trigger HTML5 validation next time
+      shelfInput.value = '';
+      // Focus back on the input
+      shelfInput.focus();
+      return;
+    }
+
     const shelf = shelfInput.value.trim().toUpperCase();
     const date = dateInput.value;
     
     try {
-      // Validate input
-      if (!/^[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}$/.test(shelf)) {
-        showAlert('Shelf number format is invalid.', { 
-          html: true, 
-          isConfirm: false,
-          alertType: 'error'
-        });
+      // Additional validation for whitespace-only input
+      // This shouldn't be needed now due to the check above, but keeping as a safeguard
+      if (!shelf) {
+        shelfInput.value = ''; // Clear the input to show the native validation message
+        shelfInput.focus();
         return;
       }
-      
+
       // Check if shelf already exists and show duplicate error
       if (shelves[shelf]) {
         showAlert(`
@@ -1739,18 +1854,20 @@ const setupMobileAddPanel = () => {
   const panel = document.getElementById('mobile-add-panel');
   const backdrop = document.getElementById('mobile-backdrop');
   
-  if (addButton && panel) {
-    // Set up FAB button
-    addButton.addEventListener('click', () => {
-      toggleMobileAddPanel(true);
-    });
+  // FIX: Only proceed if all required elements exist
+  if (!addButton || !panel || !closeButton || !backdrop) {
+    log({ level: 'info', message: 'Mobile add panel elements not found, skipping setup' });
+    return;
   }
   
-  if (closeButton) {
-    closeButton.addEventListener('click', () => {
-      toggleMobileAddPanel(false);
-    });
-  }
+  // Set up FAB button
+  addButton.addEventListener('click', () => {
+    toggleMobileAddPanel(true);
+  });
+  
+  closeButton.addEventListener('click', () => {
+    toggleMobileAddPanel(false);
+  });
   
   // Set up groups button - NEW
   const groupsButton = document.getElementById('mobile-groups-button');
@@ -1785,4 +1902,40 @@ const setupMobileAddPanel = () => {
   });
 };
 
-renderTable();
+// Update the cloud sync button to always open settings
+const setupCloudSyncButton = () => {
+  const syncButton = document.getElementById('cloud-sync-button');
+  const statusIndicator = document.getElementById('gist-status-indicator');
+  
+  if (!syncButton) return;
+  
+  // Update indicator based on current status
+  const updateStatusIndicator = () => {
+    if (!statusIndicator) return;
+    
+    if (window.gistdb?.isEnabled()) {
+      statusIndicator.classList.remove('bg-gray-500', 'bg-red-500');
+      statusIndicator.classList.add('bg-green-500');
+      
+      // Show last sync time in tooltip
+      const lastSync = window.gistdb.getConfig().lastSync;
+      if (lastSync) {
+        const lastSyncDate = new Date(lastSync);
+        const timeString = lastSyncDate.toLocaleTimeString();
+        syncButton.setAttribute('title', `Last synced: ${timeString}`);
+      }
+    } else {
+      statusIndicator.classList.remove('bg-green-500', 'bg-red-500');
+      statusIndicator.classList.add('bg-gray-500');
+      syncButton.setAttribute('title', 'Click to configure cloud backup');
+    }
+  };
+  
+  // Initial status update
+  updateStatusIndicator();
+  
+  syncButton.addEventListener('click', () => {
+    // Always open the configuration form when the cloud button is clicked
+    window.storage.configureCloudStorage();
+  });
+};

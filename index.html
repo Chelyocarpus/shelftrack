@@ -209,6 +209,52 @@
         .mobile-view-content {
           padding-bottom: 72px;
         }
+        
+        /* Reposition cloud sync button for mobile */
+        .cloud-sync-container {
+          position: fixed;
+          bottom: auto !important; /* Override desktop position */
+          right: 0.75rem !important; /* Keep at right side */
+          top: 0.75rem;
+          left: auto !important; /* Override previous left positioning */
+          z-index: 25; /* High enough to be visible, but below modal panels */
+        }
+        
+        .cloud-sync-button {
+          background-color: rgba(255, 255, 255, 0.9);
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+          width: 2.5rem !important;
+          height: 2.5rem !important;
+        }
+        
+        /* Add visual feedback on sync status */
+        #gist-status-indicator.syncing {
+          animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+      }
+      
+      /* Add backup status indicator and related styles */
+      .backup-status-tooltip {
+        position: absolute;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        top: -2rem;
+        right: 0;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      
+      #cloud-sync-button:hover .backup-status-tooltip {
+        opacity: 1;
+      }
+      
+      #gist-status-indicator.bg-yellow-500 {
+        animation: pulse 1s infinite;
       }
     </style>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📦</text></svg>">
@@ -268,12 +314,15 @@
             <h2 class="text-xl font-semibold mb-4 text-primary-600">Add New Shelf</h2>
             <form id="shelf-form" class="flex flex-col gap-4" autocomplete="off">
               <div>
-                <label for="shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>
-                <input id="shelf-number" name="shelf-number" type="text" pattern="[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}" 
+                <label for="shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>                <input id="shelf-number" name="shelf-number" type="text"
                   required aria-describedby="shelf-format" 
                   class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
-                  placeholder="E.g. ABC-12.345" />
-                <span id="shelf-format" class="text-sm text-gray-500 mt-2 block">Format: 3 letters/numbers - 2 numbers . 3 numbers</span>
+                  placeholder="Enter shelf name" 
+                  oninvalid="this.setCustomValidity('Shelf name cannot be empty. Please enter a valid shelf identifier.')"
+                  oninput="this.setCustomValidity('')" 
+                  pattern="\S+.*" 
+                  title="Shelf name cannot be empty or contain only whitespace" />
+                <span id="shelf-format" class="text-sm text-gray-500 mt-2 block">Any shelf name or identifier format is accepted</span>
               </div>
               
               <div>
@@ -392,12 +441,15 @@
       <div class="p-4 mobile-form-container">
         <form id="mobile-shelf-form" class="flex flex-col gap-4" autocomplete="off">
           <div>
-            <label for="mobile-shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>
-            <input id="mobile-shelf-number" name="shelf-number" type="text" pattern="[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}" 
+            <label for="mobile-shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>            <input id="mobile-shelf-number" name="shelf-number" type="text"
               required aria-describedby="mobile-shelf-format" 
               class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
-              placeholder="E.g. ABC-12.345" />
-            <span id="mobile-shelf-format" class="text-sm text-gray-500 mt-2 block">Format: 3 letters/numbers - 2 numbers . 3 numbers</span>
+              placeholder="Enter shelf name" 
+              oninvalid="this.setCustomValidity('Shelf name cannot be empty. Please enter a valid shelf identifier.')"
+              oninput="this.setCustomValidity('')" 
+              pattern="\S+.*" 
+              title="Shelf name cannot be empty or contain only whitespace" />
+            <span id="mobile-shelf-format" class="text-sm text-gray-500 mt-2 block">Any shelf name or identifier format is accepted</span>
           </div>
           
           <div>
@@ -466,6 +518,7 @@
     
     <!-- Scripts - Update script loading order -->
     <script src="js/logger.js"></script>
+    <script src="js/gistdb.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/app.js"></script>
@@ -473,5 +526,17 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <!-- DataTables JS -->
     <script src="https://cdn.datatables.net/2.3.0/js/dataTables.min.js"></script>
+    
+    <!-- Add this before the closing body tag, with the existing scripts -->
+    <div class="fixed top-4 right-4 lg:top-8 lg:right-8 flex flex-col gap-4 z-20 cloud-sync-container">
+      <!-- Add sync button -->
+      <button id="cloud-sync-button" 
+        class="cloud-sync-button flex items-center justify-center bg-white shadow-lg rounded-full w-12 h-12 text-primary-600 hover:bg-gray-100 transition-colors"
+        aria-label="Sync with cloud">
+        <i class="fas fa-cloud-upload-alt text-lg"></i>
+        <div id="gist-status-indicator" class="absolute top-0 right-0 w-3 h-3 rounded-full bg-gray-500"></div>
+        <span class="backup-status-tooltip">Cloud Backup</span>
+      </button>
+    </div>
   </body>
 </html>

@@ -15,7 +15,6 @@
     }
     return Promise.all(results).then((batches) => batches.flat());
   };
-
   const showAlert = (message, { html = false, isConfirm = false, onConfirm = null, confirmText = 'Confirm', alertType = 'info', autoClose = 0 } = {}) => {
     const alertBox = document.getElementById('custom-alert');
     const alertMsg = document.getElementById('alert-message');
@@ -30,6 +29,12 @@
       console.warn('Alert dialog elements not found, falling back to console');
       console.log(message);
       return;
+    }
+    
+    // Clear any existing timeouts to prevent issues with multiple alerts
+    if (window._alertTimeout) {
+      clearTimeout(window._alertTimeout);
+      window._alertTimeout = null;
     }
     
     // Remove 'hidden' class to show the alert
@@ -124,11 +129,11 @@
       }
       closeAlert();
     };
-    
-    const keyHandler = (e) => {
+      const keyHandler = (e) => {
       if (e.key === 'Escape') {
-        if (autoCloseTimeout) {
-          clearTimeout(autoCloseTimeout);
+        if (window._alertTimeout) {
+          clearTimeout(window._alertTimeout);
+          window._alertTimeout = null;
         }
         closeAlert();
       } else if (e.key === 'Enter' && isConfirm) {
@@ -140,8 +145,9 @@
     const outsideClickHandler = (e) => {
       // Only close if clicking directly on the backdrop (alertBox), not its children
       if (e.target === alertBox) {
-        if (autoCloseTimeout) {
-          clearTimeout(autoCloseTimeout);
+        if (window._alertTimeout) {
+          clearTimeout(window._alertTimeout);
+          window._alertTimeout = null;
         }
         closeAlert();
       }
@@ -190,11 +196,9 @@
         setTimeout(() => alertClose.focus(), 10);
       }
     }
-    
-    // Auto-close functionality
-    let autoCloseTimeout;
+      // Auto-close functionality
     if (autoClose > 0) {
-      autoCloseTimeout = setTimeout(closeAlert, autoClose);
+      window._alertTimeout = setTimeout(closeAlert, autoClose);
     }
     
     // Handle escape key press to close alert
