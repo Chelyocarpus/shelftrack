@@ -266,21 +266,42 @@
       saveGroups(groups);
     }
   };
-
-  // New function to sync with cloud storage
+  // New function to sync with cloud storage with enhanced error handling
   const syncWithCloud = async () => {
     if (!useCloudStorage()) {
+      window.logger.log({ 
+        level: 'warn', 
+        message: 'Cloud sync attempted but cloud storage is not enabled or configured'
+      });
       return { success: false, message: 'Cloud storage is not enabled' };
     }
     
     try {
+      window.logger.log({ level: 'info', message: 'Starting cloud data sync' });
+      
       // Pull data from cloud
       const cloudData = await window.gistdb.pullData();
+      
+      // Validate the data we received
+      if (!cloudData || ((!cloudData.shelves || Object.keys(cloudData.shelves).length === 0) && 
+                         (!cloudData.groups || cloudData.groups.length === 0))) {
+        window.logger.log({ 
+          level: 'warn', 
+          message: 'Cloud sync succeeded but no usable data was found',
+          data: cloudData
+        });
+        
+        return { 
+          success: false, 
+          message: 'No shelf data found in cloud storage. Make sure your Gist contains valid ShelfTrack data.' 
+        };
+      }
       
       window.logger.log({ 
         level: 'info', 
         message: 'Successfully synced with cloud storage', 
-        data: cloudData 
+        shelfCount: cloudData.shelves ? Object.keys(cloudData.shelves).length : 0,
+        groupCount: cloudData.groups ? cloudData.groups.length : 0
       });
       
       return { success: true, data: cloudData };
@@ -291,7 +312,18 @@
         error 
       });
       
-      return { success: false, error, message: error.message };
+      // Provide more helpful error messages based on the error type
+      let userMessage = error.message;
+      
+      if (error.message.includes('GitHub API error: 401')) {
+        userMessage = 'Authentication failed. Please check your GitHub token in cloud settings.';
+      } else if (error.message.includes('GitHub API error: 404')) {
+        userMessage = 'Gist not found. Please check your Gist ID in cloud settings.';
+      } else if (error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
+        userMessage = 'Network error. Please check your internet connection.';
+      }
+      
+      return { success: false, error, message: userMessage };
     }
   };
 

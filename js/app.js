@@ -143,6 +143,7 @@ const saveAndRender = debounce(() => {
   let currentPage = 0;
   if (window.shelfDataTable) {
     currentPage = window.shelfDataTable.page();
+    log({ level: 'info', message: `Preserving current page ${currentPage} before render` });
   }
   
   // Before saving, ensure all linked shelves have the same most recent date
@@ -202,18 +203,47 @@ const updateBackupStatus = (status) => {
   // Remove all status classes first
   indicator.classList.remove('bg-gray-500', 'bg-green-500', 'bg-red-500', 'bg-yellow-500', 'animate-pulse');
   
+  // Update tooltip on the parent button
+  const syncButton = document.getElementById('cloud-sync-button');
+  
   switch (status) {
     case 'syncing':
       indicator.classList.add('bg-yellow-500', 'animate-pulse');
+      if (syncButton) syncButton.setAttribute('title', 'Syncing with cloud...');
       break;
     case 'success':
       indicator.classList.add('bg-green-500');
+      if (syncButton) {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString();
+        syncButton.setAttribute('title', `Last synced: ${timeString}`);
+      }
       break;
     case 'error':
       indicator.classList.add('bg-red-500');
+      if (syncButton) syncButton.setAttribute('title', 'Sync failed. Click to configure.');
       break;
     default:
       indicator.classList.add('bg-gray-500');
+      if (syncButton) syncButton.setAttribute('title', 'Cloud backup not configured');
+  }
+  
+  // Also update the tooltip for accessibility
+  const tooltip = syncButton?.querySelector('.backup-status-tooltip');
+  if (tooltip) {
+    switch (status) {
+      case 'syncing':
+        tooltip.textContent = 'Syncing...';
+        break;
+      case 'success':
+        tooltip.textContent = 'Cloud Backup (Synced)';
+        break;
+      case 'error':
+        tooltip.textContent = 'Cloud Backup (Error)';
+        break;
+      default:
+        tooltip.textContent = 'Cloud Backup';
+    }
   }
 };
 
@@ -1488,7 +1518,10 @@ window.app = {
   removeFromGroup,
   addToGroup,
   toggleMobileAddPanel,
-  toggleMobileGroupsPanel, // Add new function to exports
+  toggleMobileGroupsPanel,
+  // Cloud sync features
+  triggerCloudSync: null, // Will be set in setupCloudSyncButton
+  // Utility functions
   getShelves: () => shelves
 };
 
@@ -1511,6 +1544,151 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   
   logInfo('Application starting');
+    // Check if this is a new setup with no local data but cloud sync is enabled
+  const checkForCloudDataOnNewSetup = async () => {
+    try {
+      const localShelves = loadShelves();
+      const isEmptyLocalData = Object.keys(localShelves).length === 0;
+      
+      // Check if cloud sync is configured
+      const isCloudConfigured = window.gistdb && window.gistdb.isEnabled();
+      
+      logInfo(`Cloud sync check - Empty local data: ${isEmptyLocalData}, Cloud configured: ${isCloudConfigured}`);
+      
+      if (isCloudConfigured) {
+        // If we have no local data, or forced reload is requested
+        if (isEmptyLocalData) {
+          logInfo('New setup detected with cloud sync enabled. Attempting to load data from cloud...');
+          
+          // Show loading indicator on status dot
+          const indicator = document.getElementById('gist-status-indicator');
+          if (indicator) {
+            indicator.classList.remove('bg-gray-500', 'bg-green-500', 'bg-red-500');
+            indicator.classList.add('bg-yellow-500', 'animate-pulse');
+          }
+            // Show the cloud sync notification
+          const notification = document.getElementById('cloud-sync-notification');
+          const syncCount = document.getElementById('cloud-sync-count');
+          if (notification) {
+            notification.classList.remove('hidden');
+            // Make sure it's visible
+            notification.style.display = 'flex';
+            notification.classList.add('animate-pulse');
+          }
+          
+          // Attempt to sync with cloud
+          logInfo('Initiating cloud sync...');
+          
+          // Add some animation/progress indicators
+          let progressDots = '';
+          const progressInterval = setInterval(() => {
+            if (notification) {
+              progressDots = (progressDots.length >= 3) ? '' : progressDots + '.';
+              if (syncCount) {
+                syncCount.textContent = progressDots;
+              }
+            }
+          }, 500);
+          
+          const result = await window.storage.syncWithCloud();
+          clearInterval(progressInterval);
+          
+          logInfo(`Cloud sync result: ${result.success ? 'Success' : 'Failed'}`);
+          
+          if (syncCount) {
+            syncCount.textContent = result.success ? '✓' : '✗';
+          }
+          
+          // Hide notification after a longer delay to ensure user sees it
+          if (notification) {
+            notification.classList.remove('animate-pulse');
+            setTimeout(() => {
+              notification.classList.add('hidden');
+            }, 2000);
+          }
+          
+          if (result.success && result.data) {
+            // Reload shelves from localStorage after sync
+            shelves = loadShelves();
+            const shelvesCount = Object.keys(shelves).length;
+            logInfo(`Successfully loaded data from cloud storage - ${shelvesCount} shelves found`);
+            
+            // Update status indicator
+            if (indicator) {
+              indicator.classList.remove('bg-yellow-500', 'animate-pulse');
+              indicator.classList.add('bg-green-500');
+            }
+            
+            // Show success message
+            window.utils.showAlert(`
+              <div class="flex items-start">
+                <i class="fas fa-cloud-download-alt h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+                <div>
+                  <span class="font-medium">Cloud Data Loaded</span>
+                  <p>Your shelf data has been successfully loaded from cloud storage.</p>
+                  ${result.data.shelves ? `<p class="text-sm text-gray-600">${Object.keys(result.data.shelves).length} shelves loaded.</p>` : ''}
+                </div>
+              </div>
+            `, { 
+              html: true, 
+              alertType: 'success',
+              autoClose: 3500
+            });
+            
+            // Render the table with the new data
+            renderTable();
+          } else if (result.error) {
+            throw new Error(result.message || 'Failed to load cloud data');
+          } else {
+            logInfo('No data found in cloud storage or empty result');
+            throw new Error('No data found in cloud storage');
+          }
+        } else {
+          // If we have local data but cloud sync is configured, just update the indicator
+          const indicator = document.getElementById('gist-status-indicator');
+          if (indicator) {
+            indicator.classList.remove('bg-gray-500', 'bg-red-500');
+            indicator.classList.add('bg-green-500');
+          }
+        }
+      }
+    } catch (err) {
+      logInfo(`Error during cloud sync check: ${err.message}`);
+      
+      // Update status indicator on error
+      const indicator = document.getElementById('gist-status-indicator');
+      if (indicator) {
+        indicator.classList.remove('bg-yellow-500', 'animate-pulse');
+        indicator.classList.add('bg-red-500');
+      }
+      
+      // Show error message
+      window.utils.showAlert(`
+        <div class="flex items-start">
+          <i class="fas fa-exclamation-circle h-6 w-6 text-red-500 mr-2" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Cloud Sync Error</span>
+            <p>Failed to load data from cloud storage.</p>
+            <p class="text-sm text-gray-600">${err.message}</p>
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        alertType: 'error'
+      });
+      
+      // Hide notification
+      const notification = document.getElementById('cloud-sync-notification');
+      if (notification) {
+        notification.classList.add('hidden');
+      }
+    }
+  };
+    // Run the cloud data check - using setTimeout to ensure DOM is fully loaded first
+  setTimeout(() => {
+    logInfo('Running cloud data check with slight delay to ensure DOM is ready');
+    checkForCloudDataOnNewSetup();
+  }, 500);
   
   // Initialize DataTables
   const $ = window.jQuery || window.$;
@@ -1902,12 +2080,149 @@ const setupMobileAddPanel = () => {
   });
 };
 
-// Update the cloud sync button to always open settings
+// Update the cloud sync button with improved functionality
 const setupCloudSyncButton = () => {
   const syncButton = document.getElementById('cloud-sync-button');
   const statusIndicator = document.getElementById('gist-status-indicator');
   
   if (!syncButton) return;
+  
+  // Function to manually trigger cloud sync
+  const triggerCloudSync = async () => {
+    // Only proceed if cloud sync is configured
+    if (!window.gistdb?.isEnabled()) {
+      window.utils.showAlert(`
+        <div class="flex items-start">
+          <i class="fas fa-cloud h-6 w-6 text-gray-500 mr-2" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Cloud Not Configured</span>
+            <p>Cloud backup is not configured yet. Would you like to configure it now?</p>
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        isConfirm: true,
+        confirmText: 'Configure',
+        onConfirm: () => {
+          window.storage.configureCloudStorage();
+        }
+      });
+      return;
+    }    try {
+      // Show sync notification
+      const notification = document.getElementById('cloud-sync-notification');
+      const syncCount = document.getElementById('cloud-sync-count');
+      if (notification) {
+        notification.classList.remove('hidden');
+        notification.style.display = 'flex';
+        notification.classList.add('animate-pulse');
+        
+        // Update notification text for manual sync
+        const notificationText = notification.querySelector('span');
+        if (notificationText) {
+          notificationText.textContent = 'Syncing with cloud...';
+        }
+      }
+
+      // Update status indicator
+      if (statusIndicator) {
+        statusIndicator.classList.remove('bg-gray-500', 'bg-green-500', 'bg-red-500');
+        statusIndicator.classList.add('bg-yellow-500', 'animate-pulse');
+      }
+      
+      // Add some animation/progress indicators
+      let progressDots = '';
+      const progressInterval = setInterval(() => {
+        if (notification) {
+          progressDots = (progressDots.length >= 3) ? '' : progressDots + '.';
+          if (syncCount) {
+            syncCount.textContent = progressDots;
+          }
+        }
+      }, 500);
+
+      // Perform the sync
+      const result = await window.storage.syncWithCloud();
+      clearInterval(progressInterval);
+      
+      if (syncCount) {
+        syncCount.textContent = result.success ? '✓' : '✗';
+      }      // Hide notification with proper transition
+      if (notification) {
+        notification.classList.remove('animate-pulse');
+        // First fade out with opacity transition
+        notification.style.opacity = '0';
+        
+        // Then hide completely after transition completes
+        setTimeout(() => {
+          notification.classList.add('hidden');
+          notification.style.display = 'none';
+          
+          // Reset the notification state for next use
+          setTimeout(() => {
+            notification.style.opacity = ''; // Reset opacity
+            const notificationText = notification.querySelector('span');
+            if (notificationText) {
+              notificationText.textContent = 'Loading data from cloud...';
+            }
+          }, 100);
+        }, 400); // Match with transition-duration in CSS
+      }
+
+      // Update status based on result
+      if (statusIndicator) {
+        statusIndicator.classList.remove('bg-yellow-500', 'animate-pulse');
+        statusIndicator.classList.add(result.success ? 'bg-green-500' : 'bg-red-500');
+      }
+
+      if (result.success) {
+        // Reload shelves from localStorage after sync
+        shelves = loadShelves();
+        
+        // Show success message
+        window.utils.showAlert(`
+          <div class="flex items-start">
+            <i class="fas fa-cloud-download-alt h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+            <div>
+              <span class="font-medium">Cloud Sync Complete</span>
+              <p>Your shelf data has been synchronized with cloud storage.</p>
+              ${result.data?.shelves ? `<p class="text-sm text-gray-600">${Object.keys(result.data.shelves).length} shelves loaded.</p>` : ''}
+            </div>
+          </div>
+        `, { 
+          html: true, 
+          alertType: 'success',
+          autoClose: 2500
+        });
+        
+        // Refresh the UI
+        renderTable();
+      } else {
+        throw new Error(result.message || 'Failed to sync with cloud');
+      }
+    } catch (err) {
+      // Show error message
+      window.utils.showAlert(`
+        <div class="flex items-start">
+          <i class="fas fa-exclamation-circle h-6 w-6 text-red-500 mr-2" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Cloud Sync Error</span>
+            <p>Failed to sync data with cloud storage.</p>
+            <p class="text-sm text-gray-600">${err.message}</p>
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        alertType: 'error'
+      });
+      
+      // Update status indicator
+      if (statusIndicator) {
+        statusIndicator.classList.remove('bg-yellow-500', 'animate-pulse');
+        statusIndicator.classList.add('bg-red-500');
+      }
+    }
+  };
   
   // Update indicator based on current status
   const updateStatusIndicator = () => {
@@ -1930,12 +2245,37 @@ const setupCloudSyncButton = () => {
       syncButton.setAttribute('title', 'Click to configure cloud backup');
     }
   };
-  
-  // Initial status update
+    // Initial status update
   updateStatusIndicator();
   
-  syncButton.addEventListener('click', () => {
-    // Always open the configuration form when the cloud button is clicked
-    window.storage.configureCloudStorage();
+  // Add click handler with right-click support for different actions
+  syncButton.addEventListener('click', (e) => {
+    // Right-click triggers sync, left-click opens config
+    if (e.button === 2 || e.ctrlKey) {
+      e.preventDefault();
+      triggerCloudSync();
+    } else {
+      // Regular click opens the configuration form
+      window.storage.configureCloudStorage();
+    }
   });
+  
+  // Add context menu for right-click
+  syncButton.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    triggerCloudSync();
+  });
+  
+  // Set up the force sync button if it exists
+  const forceSyncButton = document.getElementById('force-sync-button');
+  if (forceSyncButton) {
+    forceSyncButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      triggerCloudSync();
+    });
+  }
+  
+  // Expose the sync function to window.app so it can be called from elsewhere
+  if (!window.app) window.app = {};
+  window.app.triggerCloudSync = triggerCloudSync;
 };

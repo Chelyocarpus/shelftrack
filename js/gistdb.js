@@ -328,10 +328,16 @@
       console.error('Utils module not available');
       return;
     }
-    
-    window.utils.showAlert(`
+      window.utils.showAlert(`
       <div>
         <h3 class="text-lg font-medium mb-4">GitHub Gist Database Configuration</h3>
+        
+        <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
+          <p class="text-sm text-blue-800">
+            <i class="fas fa-info-circle mr-1"></i> 
+            To manually sync with cloud storage, use the small sync button below the cloud icon, or right-click on the cloud icon.
+          </p>
+        </div>
         
         <div class="mb-4">
           <label class="flex items-center">
