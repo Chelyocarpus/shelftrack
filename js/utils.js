@@ -70,7 +70,7 @@
       alertBox.setAttribute('role', 'dialog');
       alertBox.tabIndex = -1;
 
-      // Focus management for mobile
+      // Focus management
       setTimeout(() => {
         alertBox.focus();
         alertBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -78,6 +78,7 @@
       
       // Store the original overflow value before changing it
       const originalOverflow = document.body.style.overflow;
+      document.body.classList.add('modal-open');
       
       // Move function declarations to the top so they're available throughout
       const closeAlert = () => {
@@ -93,6 +94,14 @@
         
         // Restore the original overflow value
         document.body.style.overflow = originalOverflow;
+        document.body.classList.remove('modal-open');
+        
+        // Additional safeguard to ensure scrolling is enabled
+        setTimeout(() => {
+          if (document.body.style.overflow === 'hidden') {
+            document.body.style.overflow = '';
+          }
+        }, 300);
       };
       
       const handleCancel = () => {
@@ -185,5 +194,38 @@
     }
   };
 
-  window.utils = { debounce, batchRequests, showAlert };
+  const waitForElement = (selector, callback, maxAttempts = 10, interval = 100) => {
+    let attempts = 0;
+    
+    const checkElement = () => {
+      const element = document.querySelector(selector);
+      if (element) {
+        callback(element);
+        return true;
+      } else if (attempts < maxAttempts) {
+        attempts++;
+        setTimeout(checkElement, interval);
+        return false;
+      } else {
+        console.warn(`Element ${selector} not found after ${maxAttempts} attempts`);
+        return false;
+      }
+    };
+    
+    return checkElement();
+  };
+
+  const scrollToElement = (selector, options = {}) => {
+    const { behavior = 'smooth', block = 'center', maxAttempts = 10, highlightClass } = options;
+    
+    waitForElement(selector, (element) => {
+      element.scrollIntoView({ behavior, block });
+      
+      if (highlightClass) {
+        element.classList.add(highlightClass);
+      }
+    }, maxAttempts);
+  };
+
+  window.utils = { debounce, batchRequests, showAlert, waitForElement, scrollToElement };
 })();

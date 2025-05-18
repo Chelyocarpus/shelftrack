@@ -1,13 +1,31 @@
 // app.js
+// Ensure logger is available
+const logger = window.logger || {
+  log: (options) => console.log('[App]', typeof options === 'string' ? options : options.message, options),
+  error: (msg) => console.error('[App]', msg),
+  warn: (msg) => console.warn('[App]', msg),
+  info: (msg) => console.info('[App]', msg),
+  debug: (msg) => console.debug('[App]', msg)
+};
+
 const { 
   loadShelves, saveShelves, 
   loadGroups, saveGroups,
   linkShelves, linkShelfPair, unlinkShelves, 
   getLinkedShelves, cleanupGroups, removeShelfFromGroup,
   getAllGroups, getGroupForShelf, setGroupName
-} = window.storage;
-const { debounce, showAlert } = window.utils;
-const { log } = window.logger;
+} = window.storage || {};
+const { debounce, showAlert } = window.utils || { 
+  debounce: (fn, delay = 300) => {
+    let timeout;
+    return (...args) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn(...args), delay);
+    };
+  },
+  showAlert: (msg) => window.alert(msg)
+};
+const { log } = logger;
 
 let shelves = loadShelves();
 let recentlyAddedShelves = [];
@@ -16,15 +34,99 @@ const shelfForm = document.getElementById('shelf-form');
 const shelfTableBody = document.getElementById('shelf-table-body');
 const linkShelfForm = document.getElementById('link-shelf-form');
 
+// Toggle the mobile add panel
+const toggleMobileAddPanel = (show = true) => {
+  const panel = document.getElementById('mobile-add-panel');
+  const backdrop = document.getElementById('mobile-backdrop');
+  
+  // Close groups panel if open to avoid conflicts
+  const groupsPanel = document.getElementById('mobile-groups-panel');
+  if (groupsPanel && groupsPanel.classList.contains('open')) {
+    groupsPanel.classList.remove('open');
+  }
+  
+  if (panel) {
+    if (show) {
+      panel.classList.add('open');
+      backdrop.classList.add('open');
+      
+      // Set focus on the first input field
+      setTimeout(() => {
+        const input = document.getElementById('mobile-shelf-number');
+        if (input) {
+          input.focus();
+        }
+      }, 300);
+      
+      // Store the original overflow value before changing it
+      document.body.dataset.originalOverflow = document.body.style.overflow;
+      // Prevent body scrolling
+      document.body.style.overflow = 'hidden';
+    } else {
+      panel.classList.remove('open');
+      backdrop.classList.remove('open');
+      
+      // Restore body scrolling using the stored value
+      if (document.body.dataset.originalOverflow) {
+        document.body.style.overflow = document.body.dataset.originalOverflow;
+      } else {
+        document.body.style.overflow = '';
+      }
+    }
+  }
+};
+
+// Toggle the mobile groups panel - NEW
+const toggleMobileGroupsPanel = (show = true) => {
+  const panel = document.getElementById('mobile-groups-panel');
+  const backdrop = document.getElementById('mobile-backdrop');
+  
+  // Close add panel if open to avoid conflicts
+  const addPanel = document.getElementById('mobile-add-panel');
+  if (addPanel && addPanel.classList.contains('open')) {
+    addPanel.classList.remove('open');
+  }
+  
+  if (panel) {
+    if (show) {
+      panel.classList.add('open');
+      backdrop.classList.add('open');
+      
+      // Clone and update linked shelves content for mobile view
+      const desktopContainer = document.getElementById('linked-shelves-container');
+      const mobileContainer = document.getElementById('mobile-linked-shelves-container');
+      
+      if (desktopContainer && mobileContainer) {
+        mobileContainer.innerHTML = desktopContainer.innerHTML;
+      }
+      
+      // Store the original overflow value before changing it
+      document.body.dataset.originalOverflow = document.body.style.overflow;
+      // Prevent body scrolling
+      document.body.style.overflow = 'hidden';
+    } else {
+      panel.classList.remove('open');
+      backdrop.classList.remove('open');
+      
+      // Restore body scrolling using the stored value
+      if (document.body.dataset.originalOverflow) {
+        document.body.style.overflow = document.body.dataset.originalOverflow;
+      } else {
+        document.body.style.overflow = '';
+      }
+    }
+  }
+};
+
 // Modified to sync dates across linked shelves
 const saveAndRender = debounce(() => {
   // Before saving, ensure all linked shelves have the same most recent date
   const groups = getAllGroups();
   groups.forEach(group => {
-    if (group.length > 1) {
+    if (group.shelves && group.shelves.length > 1) {
       // Find the most recent date in the group
       let mostRecentDate = '';
-      group.forEach(shelf => {
+      group.shelves.forEach(shelf => {
         if (shelves[shelf] && (!mostRecentDate || shelves[shelf] > mostRecentDate)) {
           mostRecentDate = shelves[shelf];
         }
@@ -32,7 +134,7 @@ const saveAndRender = debounce(() => {
       
       // Apply the most recent date to all shelves in the group
       if (mostRecentDate) {
-        group.forEach(shelf => {
+        group.shelves.forEach(shelf => {
           if (shelves[shelf] !== mostRecentDate) {
             shelves[shelf] = mostRecentDate;
             log({ level: 'info', message: `Updated shelf ${shelf} date to match group (${mostRecentDate})` });
@@ -45,6 +147,7 @@ const saveAndRender = debounce(() => {
   saveShelves(shelves);
   cleanupGroups(shelves);
   renderTable();
+  
   log({ level: 'info', message: 'Shelves updated', shelves });
 }, 200);
 
@@ -85,6 +188,27 @@ shelfForm.addEventListener('submit', (e) => {
         onConfirm: () => {
           // Update the shelf with new date
           shelves[shelf] = date;
+          
+          // Create a function to highlight and scroll after rendering
+          const scrollToUpdatedRow = () => {
+            const updatedRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
+            if (updatedRow) {
+              updatedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              updatedRow.classList.add('highlight-new-row');
+            }
+          };
+          
+          // If DataTable exists, use its draw event
+          if (window.shelfDataTable) {
+            const drawListener = function() {
+              scrollToUpdatedRow();
+              // Remove the listener after it fires once
+              window.shelfDataTable.off('draw.scroll');
+            };
+            // Register the listener for the next draw event
+            window.shelfDataTable.on('draw.scroll', drawListener);
+          }
+          
           saveAndRender();
           
           // Show confirmation dialog for update
@@ -101,17 +225,6 @@ shelfForm.addEventListener('submit', (e) => {
             alertType: 'success',
             autoClose: 2000 // Auto close after 2 seconds
           });
-          
-          // Scroll to updated shelf
-          setTimeout(() => {
-            const updatedRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
-            if (updatedRow) {
-              updatedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              
-              // Add a flash effect to highlight the updated row
-              updatedRow.classList.add('highlight-new-row');
-            }
-          }, 300);
           
           // Clear inputs and focus
           shelfInput.value = '';
@@ -136,7 +249,30 @@ shelfForm.addEventListener('submit', (e) => {
       recentlyAddedShelves.shift();
     }
     
+    // Create a function to highlight and scroll after rendering
+    const scrollToNewRow = () => {
+      const newRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
+      if (newRow) {
+        newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    };
+    
+    // If DataTable exists, use its draw event
+    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.dataTable) {
+      const $ = window.jQuery;
+      $(document).one('draw.dt', '#shelf-table', scrollToNewRow);
+    }
+    
     saveAndRender();
+    
+    // Close mobile panel if active
+    const mobileShelfForm = document.getElementById('mobile-shelf-form');
+    if (mobileShelfForm && mobileShelfForm.contains(shelfInput)) {
+      toggleMobileAddPanel(false);
+    }
+    
+    // Ensure body scrolling is restored
+    document.body.style.overflow = '';
     
     // Show confirmation dialog
     showAlert(`
@@ -153,14 +289,6 @@ shelfForm.addEventListener('submit', (e) => {
       autoClose: 2000 // Auto close after 2 seconds
     });
     
-    // Scroll to newly added shelf after render
-    setTimeout(() => {
-      const newRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
-      if (newRow) {
-        newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 300);
-
     // Clear inputs and focus
     shelfInput.value = '';
     dateInput.value = '';
@@ -181,6 +309,9 @@ shelfForm.addEventListener('submit', (e) => {
       html: true, 
       alertType: 'error'
     });
+    
+    // Ensure body scrolling is restored even on error
+    document.body.style.overflow = '';
   }
 });
 
@@ -361,7 +492,7 @@ const updateDashboard = (shelfData) => {
 // Enhanced renderTable function to allow table to spill instead of scroll
 const renderTable = () => {
   // Prepare data for DataTable with raw dates and links
-  const groups = loadGroups(); // Changed from loadLinks() to loadGroups()
+  const groups = loadGroups();
   const shelfArr = getShelvesArray().map(([shelf, date]) => {
     // Find which group this shelf belongs to, if any
     const linkedShelves = getLinkedShelves(shelf);
@@ -372,7 +503,7 @@ const renderTable = () => {
       date,
       status,
       displayDate: formatDateDisplay(date),
-      links: linkedShelves // Use getLinkedShelves instead of links[shelf]
+      links: linkedShelves
     };
   });
 
@@ -390,6 +521,10 @@ const renderTable = () => {
   
   const jq = window.jQuery || window.$;
   if (jq && typeof jq === 'function' && jq.fn && jq.fn.dataTable) {
+    // Before creating a new DataTable, trigger a custom event to notify any listeners 
+    // that the table is about to be re-rendered
+    jq(document).trigger('beforeTableRender');
+    
     window.shelfDataTable = jq('#shelf-table').DataTable({
       destroy: true,
       data: shelfArr,
@@ -814,6 +949,12 @@ const renderLinkedShelvesPanel = () => {
     htmlContent += '</div>';
   }
   linksContainer.innerHTML = htmlContent;
+  
+  // Also update mobile panel if it's open
+  const mobileContainer = document.getElementById('mobile-linked-shelves-container');
+  if (mobileContainer && mobileContainer.offsetParent !== null) {
+    mobileContainer.innerHTML = htmlContent;
+  }
 };
 
 // Add group name editing logic
@@ -1210,26 +1351,44 @@ const markInventoryComplete = (shelf) => {
   });
 };
 
+// Export app functions to window scope for button handlers
+window.app = {
+  removeShelf,
+  markInventoryComplete,
+  checkInventory,
+  linkShelvesUI,
+  unlinkShelvesUI,
+  createGroup,
+  editGroupName,
+  expandCollapseGroup,
+  removeFromGroup,
+  addToGroup,
+  toggleMobileAddPanel,
+  toggleMobileGroupsPanel, // Add new function to exports
+  getShelves: () => shelves
+};
+
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
-  // Use the globally available logger if it exists, otherwise use console
+  // Use the globally available logger but create convenience methods if needed
   const logger = window.logger || { 
-    info: (msg) => console.info('[App]', msg),
-    warn: (msg) => console.warn('[App]', msg),
-    error: (msg) => console.error('[App]', msg),
-    log: (obj) => console.log('[App]', obj)
+    log: console.log.bind(console)
   };
-
-  logger.info('Application starting');
   
-  // Initialize mobile interactions
-  if (window.MobileInteractions && typeof window.MobileInteractions.init === 'function') {
-    window.MobileInteractions.init();
-  } else {
-    logger.warn('MobileInteractions not available');
-  }
+  // Create convenience methods that use the standard log function
+  const logInfo = (msg) => {
+    if (typeof logger.log === 'function') {
+      logger.log({ level: 'info', message: msg });
+    } else if (typeof logger.info === 'function') {
+      logger.info(msg);
+    } else {
+      console.info('[App]', msg);
+    }
+  };
   
-  // Initialize DataTables with custom settings for mobile
+  logInfo('Application starting');
+  
+  // Initialize DataTables
   const $ = window.jQuery || window.$;
   if ($ && $.fn && $.fn.dataTable) {
     $('#shelf-table').DataTable({
@@ -1241,299 +1400,24 @@ document.addEventListener('DOMContentLoaded', () => {
       lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
       language: {
         emptyTable: "No shelves to inventory - add one to get started"
-      },
-      // Completely disable scroll handling in DataTables for mobile
-      // We'll handle scroll ourselves
-      scrollY: '',
-      scrollCollapse: false
-    });
-  }
-});
-
-// --- Mobile UX Enhancements ---
-
-// Add mobile navigation bar with 3 buttons: Table, Add, Groups
-const setupMobileNavigation = () => {
-  if (window.innerWidth >= 1024) {
-    // Desktop: show all sections
-    document.querySelectorAll('.lg\\:col-span-1, .lg\\:col-span-2, .lg\\:col-span-3').forEach(el => {
-      el.classList.remove('hidden');
-    });
-    // Show both add and groups panels on desktop
-    document.querySelectorAll('.lg\\:col-span-1 > .bg-white.rounded-lg.shadow-lg.p-6').forEach(el => {
-      el.classList.remove('hidden');
-    });
-    
-    // Remove any mobile-specific scroll restrictions
-    document.body.classList.remove('has-mobile-nav');
-    document.querySelectorAll('.current-mobile-tab').forEach(el => 
-      el.classList.remove('current-mobile-tab'));
-    
-    return;
-  }
-
-  // Mobile: show only one section at a time
-  const formSection = document.querySelector('.lg\\:col-span-1');
-  const tableSection = document.querySelector('.lg\\:col-span-2');
-  // Select both add and groups panels inside the form section
-  const addPanel = document.querySelector('.lg\\:col-span-1 > .bg-white.rounded-lg.shadow-lg.p-6:nth-of-type(1)');
-  const groupsPanel = document.querySelector('.lg\\:col-span-1 > .bg-white.rounded-lg.shadow-lg.p-6:nth-of-type(2)');
-
-  // Add mobile-specific class for styling
-  document.body.classList.add('has-mobile-nav');
-
-  // Add paddings to allow for navigation bar
-  const contentContainer = document.querySelector('.container');
-  if (contentContainer) {
-    contentContainer.classList.add('pb-16');
-  }
-
-  const navBar = document.getElementById('mobile-nav-bar');
-  let navBtns = {};
-
-  // Create nav bar if not present
-  if (!navBar) {
-    const bar = document.createElement('div');
-    bar.id = 'mobile-nav-bar';
-    bar.className = 'lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around shadow-lg z-10';
-    bar.style.padding = '0.5rem 0';
-    bar.innerHTML = `
-      <button id="mobile-table-btn" class="flex-1 py-3 flex flex-col items-center justify-center text-xs bg-primary-600 text-white">
-        <i class="fas fa-table mb-1 h-6 w-6" aria-hidden="true"></i>
-        Table
-      </button>
-      <button id="mobile-add-btn" class="flex-1 py-3 flex flex-col items-center justify-center text-xs bg-primary-100 text-primary-700">
-        <i class="fas fa-plus mb-1 h-6 w-6" aria-hidden="true"></i>
-        Add
-      </button>
-      <button id="mobile-groups-btn" class="flex-1 py-3 flex flex-col items-center justify-center text-xs bg-primary-100 text-primary-700">
-        <i class="fas fa-layer-group mb-1 h-6 w-6" aria-hidden="true"></i>
-        Groups
-      </button>
-    `;
-    document.body.appendChild(bar);
-    navBtns = {
-      table: bar.querySelector('#mobile-table-btn'),
-      add: bar.querySelector('#mobile-add-btn'),
-      groups: bar.querySelector('#mobile-groups-btn')
-    };
-  } else {
-    navBtns = {
-      table: document.getElementById('mobile-table-btn'),
-      add: document.getElementById('mobile-add-btn'),
-      groups: document.getElementById('mobile-groups-btn')
-    };
-  }
-
-  // Clear current-mobile-tab from all sections
-  document.querySelectorAll('.current-mobile-tab').forEach(el => 
-    el.classList.remove('current-mobile-tab'));
-
-  // Hide all panels except table by default
-  if (addPanel) addPanel.classList.add('hidden');
-  if (groupsPanel) groupsPanel.classList.add('hidden');
-  if (tableSection) {
-    tableSection.classList.remove('hidden');
-    tableSection.style.overflow = 'visible';
-    tableSection.style.maxHeight = '';
-    tableSection.classList.add('current-mobile-tab');
-    const dataTable = tableSection.querySelector('.dataTables_wrapper');
-    if (dataTable) {
-      dataTable.style.overflow = 'visible';
-    }
-  }
-
-  // Button handlers with improved touch event handling
-  if (navBtns.table) {
-    navBtns.table.onclick = (e) => {
-      // Prevent action if we're in scrolling mode
-      if (document.body.classList.contains('is-scrolling')) {
-        e.preventDefault();
-        return;
       }
-
-      // Clear current-mobile-tab from all sections
-      document.querySelectorAll('.current-mobile-tab').forEach(el => 
-        el.classList.remove('current-mobile-tab'));
-        
-      if (addPanel) addPanel.classList.add('hidden');
-      if (groupsPanel) groupsPanel.classList.add('hidden');
-      if (tableSection) {
-        tableSection.classList.remove('hidden');
-        tableSection.style.overflow = 'visible';
-        tableSection.style.maxHeight = '';
-        tableSection.classList.add('current-mobile-tab');
-        if (window.shelfDataTable) {
-          setTimeout(() => window.shelfDataTable.columns.adjust(), 10);
-        }
-      }
-      // Update button states
-      navBtns.table.classList.add('bg-primary-600', 'text-white');
-      navBtns.table.classList.remove('bg-primary-100', 'text-primary-700');
-      navBtns.add.classList.remove('bg-primary-600', 'text-white');
-      navBtns.add.classList.add('bg-primary-100', 'text-primary-700');
-      navBtns.groups.classList.remove('bg-primary-600', 'text-white');
-      navBtns.groups.classList.add('bg-primary-100', 'text-primary-700');
-    };
-  }
-  
-  if (navBtns.add) {
-    navBtns.add.onclick = (e) => {
-      // Prevent action if we're in scrolling mode
-      if (document.body.classList.contains('is-scrolling')) {
-        e.preventDefault();
-        return;
-      }
-
-      // Clear current-mobile-tab from all sections
-      document.querySelectorAll('.current-mobile-tab').forEach(el => 
-        el.classList.remove('current-mobile-tab'));
-        
-      if (addPanel) {
-        addPanel.classList.remove('hidden');
-        addPanel.classList.add('current-mobile-tab');
-      }
-      if (groupsPanel) groupsPanel.classList.add('hidden');
-      if (tableSection) tableSection.classList.add('hidden');
-      
-      // Update button states
-      navBtns.add.classList.add('bg-primary-600', 'text-white');
-      navBtns.add.classList.remove('bg-primary-100', 'text-primary-700');
-      navBtns.table.classList.remove('bg-primary-600', 'text-white');
-      navBtns.table.classList.add('bg-primary-100', 'text-primary-700');
-      navBtns.groups.classList.remove('bg-primary-600', 'text-white');
-      navBtns.groups.classList.add('bg-primary-100', 'text-primary-700');
-      
-      // Focus first input
-      const firstInput = addPanel ? addPanel.querySelector('input') : null;
-      if (firstInput) {
-        setTimeout(() => firstInput.focus(), 100);
-      }
-    };
-  }
-  
-  if (navBtns.groups) {
-    navBtns.groups.onclick = (e) => {
-      // Prevent action if we're in scrolling mode
-      if (document.body.classList.contains('is-scrolling')) {
-        e.preventDefault();
-        return;
-      }
-
-      // Clear current-mobile-tab from all sections
-      document.querySelectorAll('.current-mobile-tab').forEach(el => 
-        el.classList.remove('current-mobile-tab'));
-        
-      if (addPanel) addPanel.classList.add('hidden');
-      if (groupsPanel) {
-        groupsPanel.classList.remove('hidden');
-        groupsPanel.classList.add('current-mobile-tab');
-        // Remove scroll and maxHeight so only the page scrolls
-        groupsPanel.style.overflow = 'visible';
-        groupsPanel.style.maxHeight = '';
-      }
-      if (tableSection) tableSection.classList.add('hidden');
-      
-      // Update button states
-      navBtns.groups.classList.add('bg-primary-600', 'text-white');
-      navBtns.groups.classList.remove('bg-primary-100', 'text-primary-700');
-      navBtns.table.classList.remove('bg-primary-600', 'text-white');
-      navBtns.table.classList.add('bg-primary-100', 'text-primary-700');
-      navBtns.add.classList.remove('bg-primary-600', 'text-white');
-      navBtns.add.classList.add('bg-primary-100', 'text-primary-700');
-    };
-  }
-
-  // Add touch-specific attributes to all panels
-  [addPanel, groupsPanel, tableSection].forEach(panel => {
-    if (panel) {
-      panel.setAttribute('touch-action', 'auto');
-      panel.setAttribute('data-touch-protected', 'true');
-    }
-  });
-};
-
-// Enhance touch targets and input UX for mobile
-const enhanceMobileUX = () => {
-  // Touch targets
-  document.querySelectorAll('button, select, input[type="submit"]').forEach(el => {
-    el.classList.add('min-h-[44px]');
-  });
-  
-  // Date input: focus and blur for mobile
-  document.querySelectorAll('input[type="date"]').forEach(input => {
-    input.addEventListener('touchstart', (e) => {
-      // Prevent event from bubbling to DataTables
-      e.stopPropagation();
-      input.blur();
-      setTimeout(() => input.focus(), 10);
-    }, { passive: false });
-    
-    input.addEventListener('change', () => {
-      setTimeout(() => input.blur(), 300);
-    });
-  });
-  
-  // Haptic feedback
-  if ('vibrate' in navigator) {
-    document.querySelectorAll('button').forEach(btn => {
-      btn.addEventListener('click', () => navigator.vibrate(30));
     });
   }
   
-  // Add touch-specific classes to tell DataTables not to capture events
-  if (window.innerWidth < 1024) {
-    document.querySelectorAll('.lg\\:col-span-1').forEach(section => {
-      section.classList.add('dt-touch-disabled');
-    });
-    
-    // Fix DataTables to allow content to spill in mobile view
-    if (window.shelfDataTable) {
-      setTimeout(() => {
-        window.shelfDataTable.columns.adjust();
-        
-        // Remove scroll limits
-        const tableWrapper = document.querySelector('.dataTables_wrapper');
-        if (tableWrapper) {
-          tableWrapper.style.overflow = 'visible';
-          
-          const scrollBody = tableWrapper.querySelector('.dataTables_scrollBody');
-          if (scrollBody) {
-            scrollBody.style.maxHeight = '';
-            scrollBody.style.overflow = 'visible';
-          }
-        }
-      }, 100);
-    }
-    
-    // Special handling for linked-shelves-container to ensure proper scrolling
-    const linkedShelvesContainer = document.getElementById('linked-shelves-container');
-    if (linkedShelvesContainer) {
-      linkedShelvesContainer.addEventListener('touchmove', (e) => {
-        // Mark as scrolling to prevent tab changes
-        document.body.classList.add('is-scrolling');
-        // Let the event propagate within this container only
-        e.stopPropagation();
-      }, { passive: false, capture: true });
-    }
+  // Set up desktop form
+  setupShelfForm(shelfForm);
+  
+  // Set up mobile form
+  const mobileShelfForm = document.getElementById('mobile-shelf-form');
+  if (mobileShelfForm) {
+    setupShelfForm(mobileShelfForm);
   }
-};
-
-// Responsive adjustments on resize/orientation
-const handleResponsive = () => {
-  setupMobileNavigation();
-  enhanceMobileUX();
-};
-
-window.addEventListener('resize', debounce(handleResponsive, 200));
-window.addEventListener('orientationchange', () => setTimeout(handleResponsive, 200));
-
-
-// --- End Mobile UX Enhancements ---
-
-document.addEventListener('DOMContentLoaded', () => {
+  
+  // Set up mobile add panel
+  setupMobileAddPanel();
+  
   renderTable();
-  renderLinkOptions(); // Add this line to ensure options are populated on page load
+  renderLinkOptions(); // Ensure options are populated on page load
   
   // Set up link form
   const linkForm = document.getElementById('link-shelf-form');
@@ -1549,7 +1433,245 @@ document.addEventListener('DOMContentLoaded', () => {
   if (createGroupBtn) {
     createGroupBtn.addEventListener('click', createGroup);
   }
-
-  setupMobileNavigation();
-  enhanceMobileUX();
+  
+  // Add mobile group button handler
+  const mobileCreateGroupBtn = document.getElementById('mobile-create-group-btn');
+  if (mobileCreateGroupBtn) {
+    mobileCreateGroupBtn.addEventListener('click', () => {
+      toggleMobileGroupsPanel(false); // Close panel before showing dialog
+      createGroup();
+    });
+  }
 });
+
+// Setup the add shelf form (works for both mobile and desktop)
+const setupShelfForm = (formElement) => {
+  if (!formElement) return;
+  
+  formElement.addEventListener('submit', (e) => {
+    e.preventDefault();
+    
+    // Determine if this is mobile form
+    const isMobile = formElement.id === 'mobile-shelf-form';
+    const shelfInput = isMobile ? 
+      document.getElementById('mobile-shelf-number') : 
+      document.getElementById('shelf-number');
+    const dateInput = isMobile ? 
+      document.getElementById('mobile-inventory-date') : 
+      document.getElementById('inventory-date');
+    
+    const shelf = shelfInput.value.trim().toUpperCase();
+    const date = dateInput.value;
+    
+    try {
+      // Validate input
+      if (!/^[A-Z0-9]{3}-[0-9]{2}\.[0-9]{3}$/.test(shelf)) {
+        showAlert('Shelf number format is invalid.', { 
+          html: true, 
+          isConfirm: false,
+          alertType: 'error'
+        });
+        return;
+      }
+      
+      // Check if shelf already exists and show duplicate error
+      if (shelves[shelf]) {
+        showAlert(`
+          <div class="flex items-start">
+            <i class="fas fa-exclamation-triangle h-6 w-6 text-yellow-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
+            <div>
+              <span class="font-medium">Duplicate Entry!</span>
+              <p>Shelf <span class="font-mono font-medium">${shelf}</span> already exists with date ${formatDateDisplay(shelves[shelf])}.</p>
+              <p class="mt-2">Would you like to update it to ${formatDateDisplay(date)}?</p>
+            </div>
+          </div>
+        `, { 
+          html: true, 
+          alertType: 'warning',
+          isConfirm: true,
+          confirmText: 'Update',
+          onConfirm: () => {
+            // Update the shelf with new date
+            shelves[shelf] = date;
+            
+            // Create a function to highlight and scroll after rendering
+            const scrollToUpdatedRow = () => {
+              const updatedRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
+              if (updatedRow) {
+                updatedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                updatedRow.classList.add('highlight-new-row');
+              }
+            };
+            
+            // If DataTable exists, use its draw event
+            if (window.shelfDataTable) {
+              const drawListener = function() {
+                scrollToUpdatedRow();
+                // Remove the listener after it fires once
+                window.shelfDataTable.off('draw.scroll');
+              };
+              // Register the listener for the next draw event
+              window.shelfDataTable.on('draw.scroll', drawListener);
+            }
+            
+            saveAndRender();
+            
+            // Show confirmation dialog for update
+            showAlert(`
+              <div class="flex items-center">
+                <i class="fas fa-check-circle h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+                <div>
+                  <span class="font-medium">Success!</span>
+                  <p>Shelf <span class="font-mono font-medium">${shelf}</span> was updated with date ${formatDateDisplay(date)}.</p>
+                </div>
+              </div>
+            `, { 
+              html: true, 
+              alertType: 'success',
+              autoClose: 2000 // Auto close after 2 seconds
+            });
+            
+            // Clear inputs and focus
+            shelfInput.value = '';
+            dateInput.value = '';
+            shelfInput.focus();
+          }
+        });
+        return;
+      }
+      
+      // If shelf doesn't exist, proceed with adding it
+      shelves[shelf] = date;
+      
+      // Add to recently added shelves list with timestamp
+      recentlyAddedShelves.push({
+        shelf,
+        timestamp: Date.now()
+      });
+      
+      // Only keep the 5 most recent additions
+      if (recentlyAddedShelves.length > 5) {
+        recentlyAddedShelves.shift();
+      }
+      
+      // Create a function to highlight and scroll after rendering
+      const scrollToNewRow = () => {
+        const newRow = document.querySelector(`tr[data-shelf="${shelf}"]`);
+        if (newRow) {
+          newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      };
+      
+      // If DataTable exists, use its draw event
+      if (window.jQuery && window.jQuery.fn && window.jQuery.fn.dataTable) {
+        const $ = window.jQuery;
+        $(document).one('draw.dt', '#shelf-table', scrollToNewRow);
+      }
+      
+      saveAndRender();
+      
+      // Close mobile panel if active
+      const mobileShelfForm = document.getElementById('mobile-shelf-form');
+      if (mobileShelfForm && mobileShelfForm.contains(shelfInput)) {
+        toggleMobileAddPanel(false);
+      }
+      
+      // Ensure body scrolling is restored
+      document.body.style.overflow = '';
+      
+      // Show confirmation dialog
+      showAlert(`
+        <div class="flex items-center">
+          <i class="fas fa-check-circle h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Success!</span>
+            <p>Shelf <span class="font-mono font-medium">${shelf}</span> was added with date ${formatDateDisplay(date)}.</p>
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        alertType: 'success',
+        autoClose: 2000 // Auto close after 2 seconds
+      });
+      
+      // Clear inputs and focus
+      shelfInput.value = '';
+      dateInput.value = '';
+      shelfInput.focus();
+    } 
+    catch (error) {
+      log({ level: 'error', message: 'Error adding shelf', error });
+      showAlert(`
+        <div class="flex items-start">
+          <i class="fas fa-exclamation-circle h-6 w-6 text-red-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
+          <div>
+            <span class="font-medium">Failed!</span>
+            <p>Could not add shelf. Please try again.</p>
+            <p class="text-sm text-gray-600 mt-1">${error.message || 'Unknown error'}</p>
+          </div>
+        </div>
+      `, { 
+        html: true, 
+        alertType: 'error'
+      });
+      
+      // Ensure body scrolling is restored even on error
+      document.body.style.overflow = '';
+    }
+  });
+};
+
+// Set up mobile add panel functionality
+const setupMobileAddPanel = () => {
+  const addButton = document.getElementById('mobile-add-button');
+  const closeButton = document.getElementById('mobile-close-panel');
+  const panel = document.getElementById('mobile-add-panel');
+  const backdrop = document.getElementById('mobile-backdrop');
+  
+  if (addButton && panel) {
+    // Set up FAB button
+    addButton.addEventListener('click', () => {
+      toggleMobileAddPanel(true);
+    });
+  }
+  
+  if (closeButton) {
+    closeButton.addEventListener('click', () => {
+      toggleMobileAddPanel(false);
+    });
+  }
+  
+  // Set up groups button - NEW
+  const groupsButton = document.getElementById('mobile-groups-button');
+  const closeGroupsButton = document.getElementById('mobile-close-groups-panel');
+  const groupsPanel = document.getElementById('mobile-groups-panel');
+  
+  if (groupsButton && groupsPanel) {
+    groupsButton.addEventListener('click', () => {
+      toggleMobileGroupsPanel(true);
+    });
+  }
+  
+  if (closeGroupsButton) {
+    closeGroupsButton.addEventListener('click', () => {
+      toggleMobileGroupsPanel(false);
+    });
+  }
+  
+  if (backdrop) {
+    backdrop.addEventListener('click', () => {
+      toggleMobileAddPanel(false);
+      toggleMobileGroupsPanel(false); // Close groups panel too if backdrop is clicked
+    });
+  }
+  
+  // Close panel when pressing escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      toggleMobileAddPanel(false);
+      toggleMobileGroupsPanel(false);
+    }
+  });
+};
+
+renderTable();
