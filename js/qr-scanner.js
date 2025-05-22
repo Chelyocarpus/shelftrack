@@ -257,6 +257,29 @@
   };
 
   /**
+   * Trigger device vibration if available
+   * @param {number} duration - Vibration duration in milliseconds
+   */
+  const vibrateDevice = (duration = 100) => {
+    try {
+      // Check if vibration API is available
+      if (navigator && navigator.vibrate) {
+        navigator.vibrate(duration);
+        logger.log({
+          level: 'info',
+          message: `Device vibration triggered for ${duration}ms`
+        });
+      }
+    } catch (error) {
+      logger.log({
+        level: 'debug',
+        message: 'Vibration not supported or disabled',
+        error
+      });
+    }
+  };
+
+  /**
    * Handle successful scan
    */
   const handleScan = (decodedText, decodedResult) => {
@@ -268,6 +291,9 @@
     
     lastScanned = decodedText;
     lastScannedTime = now;
+    
+    // Trigger vibration feedback when code is found
+    vibrateDevice(200);
     
     // Update the UI
     updateScannerStatus(`Scanned: ${decodedText}`);
@@ -346,6 +372,7 @@
   window.qrScanner = {
     open: openScanner,
     close: closeScanner,
-    isInitialized: () => scannerInitialized
+    isInitialized: () => scannerInitialized,
+    vibrate: vibrateDevice // Expose the vibration function
   };
 })();
