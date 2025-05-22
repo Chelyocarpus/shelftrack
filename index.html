@@ -264,6 +264,8 @@
       }
     </style>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📦</text></svg>">
+    <!-- Add html5-qrcode library for scanning -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js"></script>
   </head>
   <body class="bg-gray-50 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -320,14 +322,21 @@
             <h2 class="text-xl font-semibold mb-4 text-primary-600">Add New Shelf</h2>
             <form id="shelf-form" class="flex flex-col gap-4" autocomplete="off">
               <div>
-                <label for="shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>                <input id="shelf-number" name="shelf-number" type="text"
-                  required aria-describedby="shelf-format" 
-                  class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
-                  placeholder="Enter shelf name" 
-                  oninvalid="this.setCustomValidity('Shelf name cannot be empty. Please enter a valid shelf identifier.')"
-                  oninput="this.setCustomValidity('')" 
-                  pattern="\S+.*" 
-                  title="Shelf name cannot be empty or contain only whitespace" />
+                <label for="shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>
+                <div class="flex gap-2">
+                  <input id="shelf-number" name="shelf-number" type="text"
+                    required aria-describedby="shelf-format" 
+                    class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
+                    placeholder="Enter shelf name" 
+                    oninvalid="this.setCustomValidity('Shelf name cannot be empty. Please enter a valid shelf identifier.')"
+                    oninput="this.setCustomValidity('')" 
+                    pattern="\S+.*" 
+                    title="Shelf name cannot be empty or contain only whitespace" />
+                  <button type="button" id="scan-shelf-btn" class="flex items-center px-3 py-2 bg-primary-100 text-primary-700 rounded hover:bg-primary-200 focus:ring-2 focus:ring-primary-400" aria-label="Scan QR or barcode for shelf">
+                    <i class="fas fa-qrcode text-lg"></i>
+                    <span class="ml-2 hidden sm:inline">Scan</span>
+                  </button>
+                </div>
                 <span id="shelf-format" class="text-sm text-gray-500 mt-2 block">Any shelf name or identifier format is accepted</span>
               </div>
               
@@ -447,14 +456,21 @@
       <div class="p-4 mobile-form-container">
         <form id="mobile-shelf-form" class="flex flex-col gap-4" autocomplete="off">
           <div>
-            <label for="mobile-shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>            <input id="mobile-shelf-number" name="shelf-number" type="text"
-              required aria-describedby="mobile-shelf-format" 
-              class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
-              placeholder="Enter shelf name" 
-              oninvalid="this.setCustomValidity('Shelf name cannot be empty. Please enter a valid shelf identifier.')"
-              oninput="this.setCustomValidity('')" 
-              pattern="\S+.*" 
-              title="Shelf name cannot be empty or contain only whitespace" />
+            <label for="mobile-shelf-number" class="font-medium text-gray-700 block mb-2">Shelf Number:</label>
+            <div class="flex gap-2">
+              <input id="mobile-shelf-number" name="shelf-number" type="text"
+                required aria-describedby="mobile-shelf-format" 
+                class="border border-gray-300 rounded px-3 py-3 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-base" 
+                placeholder="Enter shelf name" 
+                oninvalid="this.setCustomValidity('Shelf name cannot be empty. Please enter a valid shelf identifier.')"
+                oninput="this.setCustomValidity('')" 
+                pattern="\S+.*" 
+                title="Shelf name cannot be empty or contain only whitespace" />
+              <button type="button" id="scan-mobile-shelf-btn" class="flex items-center px-3 py-2 bg-primary-100 text-primary-700 rounded hover:bg-primary-200 focus:ring-2 focus:ring-primary-400" aria-label="Scan QR or barcode for shelf">
+                <i class="fas fa-qrcode text-lg"></i>
+                <span class="ml-2 hidden sm:inline">Scan</span>
+              </button>
+            </div>
             <span id="mobile-shelf-format" class="text-sm text-gray-500 mt-2 block">Any shelf name or identifier format is accepted</span>
           </div>
           
@@ -559,6 +575,18 @@
         <i class="fas fa-spinner fa-spin text-primary-500"></i>
         <span class="font-medium">Loading data from cloud...</span>
         <span id="cloud-sync-count" class="text-xs text-primary-600 ml-1"></span>
+      </div>
+    </div>
+
+    <!-- QR/Barcode Scanner Modal -->
+    <div id="qr-scanner-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 hidden">
+      <div class="bg-white rounded-lg shadow-lg p-4 max-w-xs w-full relative">
+        <button id="close-qr-scanner" class="absolute top-2 right-2 text-gray-500 hover:text-gray-700 p-2" aria-label="Close scanner">
+          <i class="fas fa-times text-xl"></i>
+        </button>
+        <h3 class="text-lg font-semibold mb-2 text-primary-700">Scan Shelf QR/Barcode</h3>
+        <div id="qr-reader" class="w-full h-64 rounded border border-gray-200"></div>
+        <div id="qr-scanner-status" class="text-sm text-gray-600 mt-2"></div>
       </div>
     </div>
   </body>
