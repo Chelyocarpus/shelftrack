@@ -1506,100 +1506,47 @@ const markInventoryComplete = (shelf) => {
   });
 };
 
-// QR/Barcode scanner logic
-const qrScannerModal = document.getElementById('qr-scanner-modal');
-const qrReaderElem = document.getElementById('qr-reader');
-const qrScannerStatus = document.getElementById('qr-scanner-status');
-let html5QrCode = null;
-let qrScannerTargetInput = null;
-
-const openQrScanner = (targetInput) => {
-  if (!qrScannerModal || !qrReaderElem || !qrScannerStatus) {
-    // Modal or required elements not present, do nothing
-    return;
-  }
-  if (!window.Html5Qrcode) {
-    window.utils.showAlert('QR/Barcode scanner library not loaded.', { alertType: 'error' });
-    return;
-  }
-  qrScannerTargetInput = targetInput;
-  qrScannerModal.classList.remove('hidden');
-  qrScannerStatus.textContent = 'Align the code within the frame.';
-
-  if (!html5QrCode) {
-    html5QrCode = new Html5Qrcode("qr-reader");
-  } else {
-    html5QrCode.clear().catch(() => {});
-  }
-
-  Html5Qrcode.getCameras().then(cameras => {
-    const cameraId = cameras && cameras.length ? cameras[0].id : null;
-    if (!cameraId) {
-      qrScannerStatus.textContent = 'No camera found.';
-      return;
-    }
-    html5QrCode.start(
-      cameraId,
-      { fps: 10, qrbox: 200 },
-      (decodedText) => {
-        // On successful scan
-        if (qrScannerTargetInput) {
-          qrScannerTargetInput.value = decodedText;
-          qrScannerTargetInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        qrScannerStatus.textContent = 'Scan successful!';
-        setTimeout(closeQrScanner, 500);
-      },
-      (errorMsg) => {
-        // On scan failure (do nothing, keep scanning)
-      }
-    ).catch(err => {
-      qrScannerStatus.textContent = 'Unable to start camera: ' + err;
-    });
-  }).catch(err => {
-    qrScannerStatus.textContent = 'Camera access denied or not available.';
-  });
-};
-
-const closeQrScanner = () => {
-  if (!qrScannerModal) {
-    return;
-  }
-  if (html5QrCode) {
-    html5QrCode.stop().catch(() => {});
-    html5QrCode.clear().catch(() => {});
-  }
-  qrScannerModal.classList.add('hidden');
-  if (qrScannerStatus) {
-    qrScannerStatus.textContent = '';
-  }
-  qrScannerTargetInput = null;
-};
-
-// Attach scanner buttons
+// QR/Barcode scanner integration - simplified now that we use the dedicated utility
 document.addEventListener('DOMContentLoaded', () => {
-  // ...existing code...
-  if (qrScannerModal && qrReaderElem && qrScannerStatus) {
-    const scanBtn = document.getElementById('scan-shelf-btn');
-    const shelfInput = document.getElementById('shelf-number');
-    if (scanBtn && shelfInput) {
-      scanBtn.addEventListener('click', () => {
-        openQrScanner(shelfInput);
-      });
-    }
-    const scanMobileBtn = document.getElementById('scan-mobile-shelf-btn');
-    const mobileShelfInput = document.getElementById('mobile-shelf-number');
-    if (scanMobileBtn && mobileShelfInput) {
-      scanMobileBtn.addEventListener('click', () => {
-        openQrScanner(mobileShelfInput);
-      });
-    }
-    const closeQrBtn = document.getElementById('close-qr-scanner');
-    if (closeQrBtn) {
-      closeQrBtn.addEventListener('click', closeQrScanner);
-    }
-  }
-  // ...existing code...
+  // Set up QR scanner buttons - now using our dedicated utility
+  const setupScannerButtons = () => {
+    // Scan buttons are now handled by the qr-scanner.js utility,
+    // but we'll add a backup init here in case the file is slow to load
+    setTimeout(() => {
+      if (!window.qrScanner?.isInitialized()) {
+        const scanBtn = document.getElementById('scan-shelf-btn');
+        const shelfInput = document.getElementById('shelf-number');
+        if (scanBtn && shelfInput) {
+          scanBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.qrScanner) {
+              window.qrScanner.open(shelfInput);
+            } else {
+              window.utils.showAlert('QR scanner is not available', { alertType: 'error' });
+            }
+          });
+        }
+        
+        const scanMobileBtn = document.getElementById('scan-mobile-shelf-btn');
+        const mobileShelfInput = document.getElementById('mobile-shelf-number');
+        if (scanMobileBtn && mobileShelfInput) {
+          scanMobileBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.qrScanner) {
+              window.qrScanner.open(mobileShelfInput);
+            } else {
+              window.utils.showAlert('QR scanner is not available', { alertType: 'error' });
+            }
+          });
+        }
+        
+        log({ level: 'info', message: 'Fallback QR scanner button initialization' });
+      }
+    }, 500); // Give the dedicated script time to load first
+  };
+  
+  // Initialize QR scanner buttons
+  setupScannerButtons();
 });
 
 // Export app functions to window scope for button handlers
