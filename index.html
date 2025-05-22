@@ -540,22 +540,14 @@
     
     <!-- QR/Barcode Scanner Modal - Enhanced version -->
     <div id="qr-scanner-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 hidden">
-      <div class="bg-white rounded-lg shadow-lg p-4 max-w-sm w-full mx-4 relative">
+      <div class="bg-white rounded-lg shadow-lg p-4 max-w-md w-full mx-4 relative">
         <button id="close-qr-scanner" class="absolute top-2 right-2 text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100" aria-label="Close scanner">
           <i class="fas fa-times text-xl"></i>
         </button>
         <h3 class="text-lg font-semibold mb-3 text-primary-700">Scan Shelf QR/Barcode</h3>
         <p class="text-sm text-gray-600 mb-3">Point your camera at a barcode or QR code to scan.</p>
         
-        <!-- Camera selector -->
-        <div class="mb-3 hidden">
-          <label for="qr-camera-select" class="block text-sm font-medium text-gray-700 mb-1">Camera:</label>
-          <select id="qr-camera-select" class="border border-gray-300 rounded px-2 py-1 w-full text-sm">
-            <option value="">Default camera</option>
-          </select>
-        </div>
-        
-        <div id="qr-reader" class="w-full h-64 rounded border border-gray-200 bg-gray-50 overflow-hidden"></div>
+        <div id="qr-reader" class="w-full h-72 rounded border border-gray-200 bg-gray-50 overflow-hidden"></div>
         <div id="qr-scanner-status" class="text-sm text-center py-2"></div>
       </div>
     </div>
@@ -598,18 +590,6 @@
         <i class="fas fa-spinner fa-spin text-primary-500"></i>
         <span class="font-medium">Loading data from cloud...</span>
         <span id="cloud-sync-count" class="text-xs text-primary-600 ml-1"></span>
-      </div>
-    </div>
-
-    <!-- QR/Barcode Scanner Modal -->
-    <div id="qr-scanner-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 hidden">
-      <div class="bg-white rounded-lg shadow-lg p-4 max-w-xs w-full relative">
-        <button id="close-qr-scanner" class="absolute top-2 right-2 text-gray-500 hover:text-gray-700 p-2" aria-label="Close scanner">
-          <i class="fas fa-times text-xl"></i>
-        </button>
-        <h3 class="text-lg font-semibold mb-2 text-primary-700">Scan Shelf QR/Barcode</h3>
-        <div id="qr-reader" class="w-full h-64 rounded border border-gray-200"></div>
-        <div id="qr-scanner-status" class="text-sm text-gray-600 mt-2"></div>
       </div>
     </div>
   </body>
