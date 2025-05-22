@@ -544,10 +544,16 @@
         <button id="close-qr-scanner" class="absolute top-2 right-2 text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100" aria-label="Close scanner">
           <i class="fas fa-times text-xl"></i>
         </button>
-        <h3 class="text-lg font-semibold mb-3 text-primary-700">Scan Shelf QR/Barcode</h3>
-        <p class="text-sm text-gray-600 mb-3">Point your camera at a barcode or QR code to scan.</p>
+        <h3 class="text-lg font-semibold mb-2 text-primary-700">Scan Shelf QR/Barcode</h3>
+        <p class="text-sm text-gray-600 mb-2">Point your camera at a barcode or QR code to scan.</p>
         
-        <div id="qr-reader" class="w-full h-72 rounded border border-gray-200 bg-gray-50 overflow-hidden"></div>
+        <!-- Add instruction for camera controls -->
+        <p class="text-xs text-gray-500 mb-2 flex items-center">
+          <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
+          Use torch button <i class="fas fa-bolt mx-1 text-gray-600"></i> if available and zoom controls for better scanning
+        </p>
+        
+        <div id="qr-reader" class="w-full h-80 rounded border border-gray-200 bg-gray-50 overflow-hidden"></div>
         <div id="qr-scanner-status" class="text-sm text-center py-2"></div>
       </div>
     </div>

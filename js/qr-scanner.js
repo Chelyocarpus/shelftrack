@@ -16,11 +16,21 @@
   let lastScanned = null;
   let lastScannedTime = 0;
 
-  // Configuration for the scanner
+  // Configuration for the scanner - updated with better settings
   const scannerConfig = {
     fps: 10,
-    qrbox: { width: 250, height: 250 }, // Larger scan area for better QR code detection
-    aspectRatio: 1.0,
+    // Instead of using a fixed qrbox, we'll calculate based on container size
+    qrbox: (viewfinderWidth, viewfinderHeight) => {
+      // Use 80% of the smaller dimension for the scanning square
+      const minDimension = Math.min(viewfinderWidth, viewfinderHeight);
+      const desiredWidth = Math.floor(minDimension * 0.8);
+      
+      return {
+        width: desiredWidth,
+        height: desiredWidth
+      };
+    },
+    aspectRatio: 1.0, // Square aspect ratio for the video feed
     formatsToSupport: [
       Html5QrcodeSupportedFormats.QR_CODE,
       Html5QrcodeSupportedFormats.CODE_39,
@@ -29,8 +39,10 @@
       Html5QrcodeSupportedFormats.EAN_8,
       Html5QrcodeSupportedFormats.EAN_13,
     ],
+    // Explicitly enable camera controls
     showTorchButtonIfSupported: true,
-    showZoomSliderIfSupported: true
+    showZoomSliderIfSupported: true,
+    defaultZoomValueIfSupported: 1.5 // Start with slight zoom for better visibility
   };
 
   // Camera selection helper - prefers back facing camera
@@ -87,7 +99,7 @@
   };
 
   /**
-   * Initialize the scanner
+   * Initialize the scanner with proper DOM structure
    */
   const initializeScanner = async () => {
     if (scannerInitialized) return true;
@@ -107,7 +119,30 @@
         return false;
       }
 
-      htmlScanner = new Html5Qrcode('qr-reader');
+      // Make sure container is visible and sized appropriately
+      qrContainer.style.width = '100%';
+      qrContainer.style.height = '300px'; // Use more explicit height for better visibility
+      qrContainer.style.position = 'relative';
+      qrContainer.classList.add('qr-container');
+
+      // Create HTML5 QR scanner
+      htmlScanner = new Html5Qrcode('qr-reader', { verbose: false });
+      
+      // Add styling to ensure the HTML5-QR-code library elements are visible
+      setTimeout(() => {
+        const scannerRegion = qrContainer.querySelector('#qr-shaded-region');
+        const controlsElement = qrContainer.querySelector('.html5-qrcode-element');
+        
+        if (scannerRegion) {
+          scannerRegion.style.borderRadius = '8px';
+          scannerRegion.style.border = '2px solid rgba(0, 128, 255, 0.5)';
+        }
+        
+        if (controlsElement) {
+          controlsElement.style.marginTop = '10px';
+        }
+      }, 1000);
+
       scannerInitialized = true;
       return true;
     } catch (error) {
@@ -122,7 +157,7 @@
   };
 
   /**
-   * Open the QR scanner modal
+   * Open the QR scanner modal with improved camera access
    */
   const openScanner = async (inputElement) => {
     // Store target input for later
@@ -147,13 +182,43 @@
       // Get preferred camera (back camera)
       const cameraId = await getCameraPreference();
       
-      // Start scanning with the selected camera
+      // Define camera configuration with explicit constraints for better camera control
+      const cameraConfig = cameraId ? 
+        { deviceId: { exact: cameraId } } : 
+        { 
+          facingMode: { exact: "environment" },
+          // Add advanced constraints for better camera control
+          advanced: [
+            { zoom: { ideal: 1 } },
+            { focusMode: { ideal: "continuous" } }
+          ]
+        };
+      
+      // Start scanning with the selected camera and explicit configuration
       await htmlScanner.start(
-        cameraId || { facingMode: "environment" }, // Fallback to environment facing camera
+        cameraConfig,
         scannerConfig,
         handleScan,
         handleScanError
       );
+      
+      // Check for torch/flash availability after starting
+      setTimeout(() => {
+        if (htmlScanner.getRunningTrackCapabilities) {
+          const capabilities = htmlScanner.getRunningTrackCapabilities();
+          if (capabilities && capabilities.torch === true) {
+            logger.log({
+              level: 'info',
+              message: 'Torch/flash is available'
+            });
+          } else {
+            logger.log({
+              level: 'info',
+              message: 'Torch/flash is not available on this device'
+            });
+          }
+        }
+      }, 1000);
       
       updateScannerStatus('Scanning... Point camera at barcode or QR code');
     } catch (error) {
@@ -167,7 +232,7 @@
   };
   
   /**
-   * Close the QR scanner modal
+   * Close the QR scanner modal and clean up resources
    */
   const closeScanner = async () => {
     // Hide the scanner modal
@@ -257,6 +322,24 @@
         closeScanner();
       }
     });
+    
+    // Initialize scanner controls with a delay to allow the DOM to be ready
+    setTimeout(() => {
+      const scanButtons = document.querySelectorAll('#scan-shelf-btn, #scan-mobile-shelf-btn');
+      scanButtons.forEach(button => {
+        if (button) {
+          button.addEventListener('click', (e) => {
+            e.preventDefault();
+            const input = button.id === 'scan-shelf-btn' ? 
+              document.getElementById('shelf-number') : 
+              document.getElementById('mobile-shelf-number');
+            if (input) {
+              openScanner(input);
+            }
+          });
+        }
+      });
+    }, 500);
   });
   
   // Expose the scanner API globally
