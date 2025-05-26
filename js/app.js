@@ -34,6 +34,15 @@ const shelfForm = document.getElementById('shelf-form');
 const shelfTableBody = document.getElementById('shelf-table-body');
 const linkShelfForm = document.getElementById('link-shelf-form');
 
+// Rhythmus configuration array
+const RHYTHMUS_UNITS = [
+  { value: 'days', label: 'Days' },
+  { value: 'weeks', label: 'Weeks' },
+  { value: 'months', label: 'Months' },
+  { value: 'years', label: 'Years' }
+];
+const DEFAULT_RHYTHMUS = { interval: 30, unit: 'days' };
+
 // Toggle the mobile add panel
 const toggleMobileAddPanel = (show = true) => {
   const panel = document.getElementById('mobile-add-panel');
@@ -254,6 +263,14 @@ shelfForm.addEventListener('submit', (e) => {
   const shelf = shelfInput.value.trim().toUpperCase();
   const date = dateInput.value;
 
+  // Rhythmus fields
+  const rhythmusIntervalInput = document.getElementById('rhythmus-interval');
+  const rhythmusUnitSelect = document.getElementById('rhythmus-unit');
+  const rhythmus = {
+    interval: Number(rhythmusIntervalInput?.value) || DEFAULT_RHYTHMUS.interval,
+    unit: rhythmusUnitSelect?.value || DEFAULT_RHYTHMUS.unit
+  };
+
   try {
     // HTML5 validation will handle empty values through the required attribute,
     // so this check is only needed for whitespace-only or additional validation
@@ -275,7 +292,7 @@ shelfForm.addEventListener('submit', (e) => {
           <i class="fas fa-exclamation-triangle h-6 w-6 text-yellow-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
           <div>
             <span class="font-medium">Duplicate Entry!</span>
-            <p>Shelf <span class="font-mono font-medium">${shelf}</span> already exists with date ${formatDateDisplay(shelves[shelf])}.</p>
+            <p>Shelf <span class="font-mono font-medium">${shelf}</span> already exists with date ${formatDateDisplay(getShelfDate(shelf))}.</p>
             <p class="mt-2">Would you like to update it to ${formatDateDisplay(date)}?</p>
           </div>
         </div>
@@ -285,8 +302,10 @@ shelfForm.addEventListener('submit', (e) => {
         isConfirm: true,
         confirmText: 'Update',
         onConfirm: () => {
-          // Update the shelf with new date
-          shelves[shelf] = date;
+          // Update the shelf with new date and rhythmus
+          ensureShelfObject(shelf);
+          setShelfDate(shelf, date);
+          setShelfRhythmus(shelf, rhythmus);
           
           // Create a function to highlight and scroll after rendering
           const scrollToUpdatedRow = () => {
@@ -335,7 +354,7 @@ shelfForm.addEventListener('submit', (e) => {
     }
     
     // If shelf doesn't exist, proceed with adding it
-    shelves[shelf] = date;
+    shelves[shelf] = { date, rhythmus };
     
     // Add to recently added shelves list with timestamp
     recentlyAddedShelves.push({
@@ -542,10 +561,61 @@ const unlinkShelvesUI = (shelf1, shelf2) => {
 
 const getShelvesArray = () => Object.entries(shelves);
 
-// Helper to format date as DD.MM.YYYY
+// Helper to get rhythmus for a shelf (with fallback)
+const getShelfRhythmus = (shelf) => {
+  const shelfObj = typeof shelves[shelf] === 'object' ? shelves[shelf] : null;
+  if (shelfObj && shelfObj.rhythmus) {
+    return shelfObj.rhythmus;
+  }
+  // fallback for legacy: if shelf is just a date string
+  return DEFAULT_RHYTHMUS;
+};
+
+// Helper to get shelf date (for legacy and new format)
+const getShelfDate = (shelf) => {
+  const shelfObj = shelves[shelf];
+  if (typeof shelfObj === 'object' && shelfObj.date) {
+    return shelfObj.date;
+  }
+  if (typeof shelfObj === 'string') {
+    return shelfObj;
+  }
+  return '';
+};
+
+// Helper to set shelf date (handles both formats)
+const setShelfDate = (shelf, date) => {
+  if (typeof shelves[shelf] === 'object') {
+    shelves[shelf].date = date;
+  } else {
+    shelves[shelf] = date;
+  }
+};
+
+// Helper to set shelf rhythmus
+const setShelfRhythmus = (shelf, rhythmus) => {
+  if (typeof shelves[shelf] === 'object') {
+    shelves[shelf].rhythmus = rhythmus;
+  } else {
+    shelves[shelf] = { date: shelves[shelf], rhythmus };
+  }
+};
+
+// Helper to ensure shelf is in object format
+const ensureShelfObject = (shelf) => {
+  if (typeof shelves[shelf] === 'string') {
+    shelves[shelf] = { date: shelves[shelf], rhythmus: DEFAULT_RHYTHMUS };
+  }
+};
+
+// Updated function to format date as DD.MM.YYYY
 const formatDateDisplay = (isoDate) => {
   if (!isoDate) {
     return '';
+  }
+  // Accept object with .date property
+  if (typeof isoDate === 'object' && isoDate.date) {
+    isoDate = isoDate.date;
   }
   const [year, month, day] = isoDate.split('-');
   if (!year || !month || !day) {
@@ -554,36 +624,49 @@ const formatDateDisplay = (isoDate) => {
   return `${day}.${month}.${year}`;
 };
 
-// Enhanced getDateStatus function with more detailed inventory status
-const getDateStatus = (date) => {
+// Helper to format rhythmus for display
+const formatRhythmusDisplay = (rhythmus) => {
+  if (!rhythmus) { return ''; }
+  const { interval, unit } = rhythmus;
+  const unitLabel = RHYTHMUS_UNITS.find(u => u.value === unit)?.label || unit;
+  // Only pluralize if interval > 1 and label does not already end with 's'
+  const plural = interval > 1 && !unitLabel.endsWith('s') ? 's' : '';
+  return `Every ${interval} ${unitLabel}${plural}`;
+};
+
+// Enhanced getDateStatus function with rhythmus support
+const getDateStatus = (date, rhythmus = DEFAULT_RHYTHMUS) => {
+  // date: ISO string
+  // rhythmus: {interval, unit}
   const today = new Date();
-  const dateObj = new Date(date);
+  let dateObj = new Date(date);
   today.setHours(0, 0, 0, 0);
   dateObj.setHours(0, 0, 0, 0);
-  
-  if (dateObj < today) {
-    // Calculate how many days overdue
-    const daysDiff = Math.floor((today - dateObj) / (1000 * 60 * 60 * 24));
+
+  // Calculate days between today and the actual date
+  const diffDays = Math.floor((dateObj - today) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
     return { 
       status: 'expired', 
-      daysDiff,
-      label: daysDiff === 1 ? '1 day overdue' : `${daysDiff} days overdue`
+      daysDiff: Math.abs(diffDays),
+      label: Math.abs(diffDays) === 1 ? '1 day overdue' : `${Math.abs(diffDays)} days overdue`,
+      nextDue: dateObj
     };
   }
-  
-  const diffDays = Math.floor((dateObj - today) / (1000 * 60 * 60 * 24));
   if (diffDays <= 7) {
     return { 
       status: 'approaching', 
       daysDiff: diffDays,
-      label: diffDays === 0 ? 'Due today' : diffDays === 1 ? 'Due tomorrow' : `Due in ${diffDays} days`
+      label: diffDays === 0 ? 'Due today' : diffDays === 1 ? 'Due tomorrow' : `Due in ${diffDays} days`,
+      nextDue: dateObj
     };
   }
-  
   return { 
     status: 'current', 
     daysDiff: diffDays,
-    label: `Due in ${diffDays} days`
+    label: `Due in ${diffDays} days`,
+    nextDue: dateObj
   };
 };
 
@@ -634,16 +717,20 @@ const updateDashboard = (shelfData) => {
 const renderTable = (options = {}) => {
   // Prepare data for DataTable with raw dates and links
   const groups = loadGroups();
-  const shelfArr = getShelvesArray().map(([shelf, date]) => {
-    // Find which group this shelf belongs to, if any
+  const shelfArr = getShelvesArray().map(([shelf, shelfObj]) => {
+    ensureShelfObject(shelf);
+    const date = getShelfDate(shelf);
+    const rhythmus = getShelfRhythmus(shelf);
     const linkedShelves = getLinkedShelves(shelf);
-    const status = getDateStatus(date);
-    
+    const status = getDateStatus(date, rhythmus);
+
     return {
       shelf,
       date,
+      rhythmus,
       status,
       displayDate: formatDateDisplay(date),
+      displayRhythmus: formatRhythmusDisplay(rhythmus),
       links: linkedShelves
     };
   });
@@ -675,7 +762,7 @@ const renderTable = (options = {}) => {
       columns: [
         { 
           data: 'shelf',
-          className: 'px-4 py-3 font-mono', // This className applies to <td> cells
+          className: 'px-4 py-3 font-mono',
           render: function(data, type, row) {
             // Show link icon if shelf has links
             // Also show the status label below the shelf code
@@ -699,18 +786,18 @@ const renderTable = (options = {}) => {
                   <span>${data} ${row.links && row.links.length > 0 ? 
                     '<i class="fas fa-link text-primary-500 ml-1" aria-hidden="true" title="Linked shelves"></i>' : 
                     ''}
-                  </span>
-                  <div class="text-xs mt-1 ${statusClass} flex items-center">
-                    ${statusIcon}${row.status.label}
-                  </div>
-                </div>`;
+                </span>
+                <div class="text-xs mt-1 ${statusClass} flex items-center">
+                  ${statusIcon}${row.status.label}
+                </div>
+              </div>`;
             }
             return data;
           }
         },
         { 
           data: null,
-          className: 'px-4 py-3 text-sm editable-date cursor-pointer underline decoration-dotted decoration-primary-400 transition-colors focus:bg-primary-100', // This className applies to <td> cells
+          className: 'px-4 py-3 text-sm editable-date cursor-pointer underline decoration-dotted decoration-primary-400 transition-colors focus:bg-primary-100',
           render: function(data, type) {
             // For sorting and filtering, use the ISO date format
             if (type === 'sort' || type === 'type' || type === 'filter') {
@@ -731,12 +818,14 @@ const renderTable = (options = {}) => {
             return `
               <span class="date-value ${statusClass}" data-raw-date="${data.date}">${data.displayDate}</span>
               <span class="sr-only">(editable)</span>
-              <i class="fas fa-pencil-alt ml-1 text-primary-400 align-text-bottom pointer-events-none" aria-hidden="true"></i>`;
+              <i class="fas fa-pencil-alt ml-1 text-primary-400 align-text-bottom pointer-events-none" aria-hidden="true"></i>
+              <div class="text-xs text-gray-500 mt-1">${data.displayRhythmus}</div>
+            `;
           }
         },
         {
           data: 'shelf',
-          className: 'px-4 py-3', // This className applies to <td> cells
+          className: 'px-4 py-3',
           render: function(shelf) {
             return `
               <div class="flex">
@@ -900,18 +989,13 @@ const renderTable = (options = {}) => {
 
 // New function to set up date editing with event delegation
 const setupDateEditingWithDelegation = () => {
-  // Remove any existing delegated event handlers first to prevent duplicates
   const table = document.getElementById('shelf-table');
   if (!table) return;
 
-  // Remove previous event listeners if any
   table.removeEventListener('click', handleDateCellClick);
   table.removeEventListener('touchend', handleDateCellTouch);
-  
-  // Add event delegation for clicks
+
   table.addEventListener('click', handleDateCellClick);
-  
-  // Add event delegation for touch events
   table.addEventListener('touchend', handleDateCellTouch);
 };
 
@@ -919,7 +1003,12 @@ const setupDateEditingWithDelegation = () => {
 const handleDateCellClick = (e) => {
   const cell = e.target.closest('.editable-date');
   if (cell && !cell.querySelector('input')) {
-    startCellEdit(cell);
+    const shelf = cell.dataset.shelf;
+    if (isMobileScreen()) {
+      showMobileDateModal(shelf, shelves[shelf]);
+    } else {
+      startCellEdit(cell);
+    }
   }
 };
 
@@ -927,93 +1016,223 @@ const handleDateCellClick = (e) => {
 const handleDateCellTouch = (e) => {
   const cell = e.target.closest('.editable-date');
   if (cell && !cell.querySelector('input')) {
-    e.preventDefault(); // Prevent default touch actions
-    startCellEdit(cell);
+    e.preventDefault();
+    const shelf = cell.dataset.shelf;
+    if (isMobileScreen()) {
+      showMobileDateModal(shelf, shelves[shelf]);
+    } else {
+      startCellEdit(cell);
+    }
+  }
+};
+
+// --- Add this helper for mobile detection ---
+const isMobileScreen = () => window.matchMedia('(max-width: 767px)').matches;
+
+// --- Add this function to show the mobile date/rhythmus modal ---
+const showMobileDateModal = (shelf, shelfObj) => {
+  ensureShelfObject(shelf);
+  const { date: oldDate, rhythmus: oldRhythmus } = typeof shelfObj === 'object' ? shelfObj : { date: shelfObj, rhythmus: DEFAULT_RHYTHMUS };
+
+  // Create modal if not present
+  let modal = document.getElementById('mobile-date-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'mobile-date-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden';
+    document.body.appendChild(modal);
+  }
+
+  // Build modal content with rhythmus fields
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-lg p-6 max-w-xs w-full mx-4 border-l-4 border-primary-500 transition-all">
+      <h3 class="text-lg font-semibold text-gray-800 mb-2">Edit Date &amp; Rhythmus</h3>
+      <p class="text-gray-600 mb-4">Shelf <span class="font-mono font-semibold">${shelf}</span></p>
+      <input id="mobile-date-input" type="date" class="border border-primary-400 rounded px-3 py-2 w-full mb-4 focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50" value="${oldDate}" />
+      <div class="mb-4 flex gap-2 items-center">
+        <input id="mobile-rhythmus-interval" type="number" min="1" class="border border-primary-400 rounded px-2 py-1 w-16 focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50" value="${oldRhythmus.interval}" aria-label="Rhythmus interval" />
+        <select id="mobile-rhythmus-unit" class="border border-primary-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50" aria-label="Rhythmus unit">
+          ${RHYTHMUS_UNITS.map(u => `<option value="${u.value}"${u.value === oldRhythmus.unit ? ' selected' : ''}>${u.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button id="mobile-date-cancel" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Cancel</button>
+        <button id="mobile-date-save" class="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700">Save</button>
+      </div>
+    </div>
+  `;
+  modal.classList.remove('hidden');
+
+  // Focus input after short delay for accessibility
+  setTimeout(() => {
+    const input = modal.querySelector('#mobile-date-input');
+    if (input) { input.focus(); }
+  }, 100);
+
+  // Cancel handler
+  const cancelBtn = modal.querySelector('#mobile-date-cancel');
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      modal.classList.add('hidden');
+    };
+  }
+
+  // Save handler
+  const saveBtn = modal.querySelector('#mobile-date-save');
+  if (saveBtn) {
+    saveBtn.onclick = () => {
+      const input = modal.querySelector('#mobile-date-input');
+      const intervalInput = modal.querySelector('#mobile-rhythmus-interval');
+      const unitSelect = modal.querySelector('#mobile-rhythmus-unit');
+      const newDate = input.value;
+      const newInterval = Number(intervalInput.value) || DEFAULT_RHYTHMUS.interval;
+      const newUnit = unitSelect.value || DEFAULT_RHYTHMUS.unit;
+      const newRhythmus = { interval: newInterval, unit: newUnit };
+
+      if (newDate && (newDate !== oldDate || newInterval !== oldRhythmus.interval || newUnit !== oldRhythmus.unit)) {
+        setShelfDate(shelf, newDate);
+        setShelfRhythmus(shelf, newRhythmus);
+
+        const linkedShelves = getLinkedShelves(shelf);
+        if (linkedShelves.length > 0) {
+          linkedShelves.forEach(linkedShelf => {
+            ensureShelfObject(linkedShelf);
+            setShelfDate(linkedShelf, newDate);
+            setShelfRhythmus(linkedShelf, newRhythmus);
+          });
+        }
+        saveAndRender();
+      }
+      modal.classList.add('hidden');
+    };
   }
 };
 
 // Function to start cell editing
 const startCellEdit = (cell) => {
   // Don't start editing if already editing
-  if (cell.querySelector('input') || !cell.dataset.shelf) return;
-  
+  if (cell.querySelector('input') || !cell.dataset.shelf) { return; }
+
   const shelf = cell.dataset.shelf;
-  const oldDate = shelves[shelf];
+  ensureShelfObject(shelf);
+  const oldDate = getShelfDate(shelf);
+  const oldRhythmus = getShelfRhythmus(shelf);
   const dateSpan = cell.querySelector('.date-value');
   const editIcon = cell.querySelector('.fa-pencil-alt');
-  
-  if (!dateSpan) return;
+
+  if (!dateSpan) { return; }
 
   // Hide the date text and icon, but keep them in DOM
   dateSpan.style.display = 'none';
-  if (editIcon) editIcon.style.display = 'none';
+  if (editIcon) { editIcon.style.display = 'none'; }
 
-  // Create input element
-  const input = document.createElement('input');
-  input.type = 'date';
-  input.value = oldDate;
-  input.className = 'border border-primary-400 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50 touch-manipulation';
-  input.setAttribute('aria-label', `Change date for ${shelf}`);
-  cell.insertBefore(input, dateSpan);
+  // Create input elements for date and rhythmus
+  const inputDate = document.createElement('input');
+  inputDate.type = 'date';
+  inputDate.value = oldDate;
+  inputDate.className = 'border border-primary-400 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50 touch-manipulation mb-1';
+  inputDate.setAttribute('aria-label', `Change date for ${shelf}`);
+
+  // Rhythmus interval input
+  const inputInterval = document.createElement('input');
+  inputInterval.type = 'number';
+  inputInterval.min = 1;
+  inputInterval.value = oldRhythmus.interval;
+  inputInterval.className = 'border border-primary-400 rounded px-2 py-1 w-16 mr-2 focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50';
+  inputInterval.setAttribute('aria-label', `Rhythmus interval for ${shelf}`);
+
+  // Rhythmus unit select
+  const selectUnit = document.createElement('select');
+  selectUnit.className = 'border border-primary-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-400 bg-primary-50';
+  selectUnit.setAttribute('aria-label', `Rhythmus unit for ${shelf}`);
+  RHYTHMUS_UNITS.forEach(({ value, label }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    if (value === oldRhythmus.unit) { opt.selected = true; }
+    selectUnit.appendChild(opt);
+  });
+
+  // Rhythmus wrapper
+  const rhythmusWrapper = document.createElement('div');
+  rhythmusWrapper.className = 'flex items-center gap-2 mt-1';
+  rhythmusWrapper.appendChild(inputInterval);
+  rhythmusWrapper.appendChild(selectUnit);
+
+  // Save/cancel buttons
+  const btnWrapper = document.createElement('div');
+  btnWrapper.className = 'flex gap-2 mt-2';
+  const btnSave = document.createElement('button');
+  btnSave.type = 'button';
+  btnSave.textContent = 'Save';
+  btnSave.className = 'px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 text-xs';
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.textContent = 'Cancel';
+  btnCancel.className = 'px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-xs';
+  btnWrapper.appendChild(btnSave);
+  btnWrapper.appendChild(btnCancel);
+
+  // Insert elements
+  cell.insertBefore(inputDate, dateSpan);
+  cell.appendChild(rhythmusWrapper);
+  cell.appendChild(btnWrapper);
 
   // Focus input after a short delay for touch devices
-  setTimeout(() => {
-    input.focus();
-    input.click();
-  }, 10);
+  setTimeout(() => { inputDate.focus(); inputDate.click(); }, 10);
 
-  const restoreCell = (val) => {
-    input.remove();
-    dateSpan.textContent = formatDateDisplay(val);
+  const restoreCell = () => {
+    inputDate.remove();
+    rhythmusWrapper.remove();
+    btnWrapper.remove();
     dateSpan.style.display = '';
-    if (editIcon) editIcon.style.display = '';
+    if (editIcon) { editIcon.style.display = ''; }
   };
 
-  const saveDate = () => {
-    const newDate = input.value;
-    if (newDate && newDate !== oldDate) {
-      // Get linked shelves
+  const saveEdit = () => {
+    const newDate = inputDate.value;
+    const newInterval = Number(inputInterval.value) || DEFAULT_RHYTHMUS.interval;
+    const newUnit = selectUnit.value || DEFAULT_RHYTHMUS.unit;
+    const newRhythmus = { interval: newInterval, unit: newUnit };
+
+    if (newDate && (newDate !== oldDate || newInterval !== oldRhythmus.interval || newUnit !== oldRhythmus.unit)) {
+      setShelfDate(shelf, newDate);
+      setShelfRhythmus(shelf, newRhythmus);
+
       const linkedShelves = getLinkedShelves(shelf);
-      
-      // Update this shelf
-      shelves[shelf] = newDate;
-      
-      // If this shelf is part of a group, update all shelves in the group
       if (linkedShelves.length > 0) {
-        // Always use the new date for all shelves in the group
         linkedShelves.forEach(linkedShelf => {
-          shelves[linkedShelf] = newDate;
-          log({ 
-            level: 'info', 
-            message: `Updated date for linked shelf ${linkedShelf} to ${newDate}`
-          });
+          ensureShelfObject(linkedShelf);
+          setShelfDate(linkedShelf, newDate);
+          setShelfRhythmus(linkedShelf, newRhythmus);
         });
       }
-      
       saveAndRender();
-    } else {
-      restoreCell(oldDate);
     }
+    restoreCell();
   };
 
-  // Handle input blur (save)
-  input.addEventListener('blur', saveDate);
-  
-  // Handle keyboard events
-  input.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') {
-      saveDate();
-      ev.preventDefault();
-    } else if (ev.key === 'Escape') {
-      restoreCell(oldDate);
-      ev.preventDefault();
-    }
+  btnSave.addEventListener('click', saveEdit);
+  btnCancel.addEventListener('click', restoreCell);
+
+  // Keyboard support
+  inputDate.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { saveEdit(); ev.preventDefault(); }
+    else if (ev.key === 'Escape') { restoreCell(); ev.preventDefault(); }
+  });
+  inputInterval.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { saveEdit(); ev.preventDefault(); }
+    else if (ev.key === 'Escape') { restoreCell(); ev.preventDefault(); }
+  });
+  selectUnit.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { saveEdit(); ev.preventDefault(); }
+    else if (ev.key === 'Escape') { restoreCell(); ev.preventDefault(); }
   });
 
   // Prevent duplicate edit on touch
-  input.addEventListener('touchend', (ev) => {
-    ev.stopPropagation();
-  });
+  inputDate.addEventListener('touchend', (ev) => { ev.stopPropagation(); });
+  inputInterval.addEventListener('touchend', (ev) => { ev.stopPropagation(); });
+  selectUnit.addEventListener('touchend', (ev) => { ev.stopPropagation(); });
 };
 
 const renderLinkedShelvesPanel = () => {
@@ -1441,16 +1660,44 @@ const renderLinkOptions = () => {
 
 // Updated function to first ask for confirmation before marking inventory complete
 const markInventoryComplete = (shelf) => {
-  const oldDate = shelves[shelf];
-  
-  // Ask for confirmation before proceeding
+  ensureShelfObject(shelf);
+  const oldDate = getShelfDate(shelf);
+  const rhythmus = getShelfRhythmus(shelf);
+
+  // Calculate the next inventory date (date X)
+  let baseDate = new Date();
+  baseDate.setHours(0, 0, 0, 0);
+  let nextDateObj = new Date(baseDate);
+  switch (rhythmus.unit) {
+    case 'days': {
+      nextDateObj.setDate(nextDateObj.getDate() + Number(rhythmus.interval));
+      break;
+    }
+    case 'weeks': {
+      nextDateObj.setDate(nextDateObj.getDate() + Number(rhythmus.interval) * 7);
+      break;
+    }
+    case 'months': {
+      nextDateObj.setMonth(nextDateObj.getMonth() + Number(rhythmus.interval));
+      break;
+    }
+    case 'years': {
+      nextDateObj.setFullYear(nextDateObj.getFullYear() + Number(rhythmus.interval));
+      break;
+    }
+    default: {
+      nextDateObj.setDate(nextDateObj.getDate() + 30);
+    }
+  }
+  const pad = (n) => n.toString().padStart(2, '0');
+  const nextDateStr = `${nextDateObj.getFullYear()}-${pad(nextDateObj.getMonth() + 1)}-${pad(nextDateObj.getDate())}`;
+
   showAlert(`
     <div class="flex items-start">
       <i class="fas fa-question-circle h-6 w-6 text-primary-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
       <div>
-        <span class="font-medium">Mark as complete?</span>
         <p>Are you sure you want to mark shelf <span class="font-mono font-medium">${shelf}</span> as completed?</p>
-        <p class="mt-1 text-sm text-gray-600">This will update the date and move the shelf to the end of the list.</p>
+        <p class="mt-1 text-sm text-gray-600">This will update the date to <span class="font-mono font-semibold">${formatDateDisplay(nextDateStr)}</span> (${formatRhythmusDisplay(rhythmus)} from today).</p>
       </div>
     </div>
   `, { 
@@ -1459,41 +1706,25 @@ const markInventoryComplete = (shelf) => {
     isConfirm: true,
     confirmText: 'Complete Inventory',
     onConfirm: () => {
-      // Find the latest date in all shelves
-      const today = new Date().toISOString().split('T')[0];
-      let latestDate = today;
-      Object.values(shelves).forEach(date => {
-        if (date > latestDate) {
-          latestDate = date;
-        }
-      });
-      
-      // Set date to one day after the latest date to ensure it appears at the end
-      const latestDateObj = new Date(latestDate);
-      latestDateObj.setDate(latestDateObj.getDate() + 1);
-      const newDate = latestDateObj.toISOString().split('T')[0];
-      
-      // Update the shelf with the new date
-      shelves[shelf] = newDate;
-      
-      // If shelf is in a group, update all linked shelves
+      setShelfDate(shelf, nextDateStr);
+
       const linkedShelves = getLinkedShelves(shelf);
       if (linkedShelves.length > 0) {
         linkedShelves.forEach(linkedShelf => {
-          shelves[linkedShelf] = newDate;
+          ensureShelfObject(linkedShelf);
+          setShelfDate(linkedShelf, nextDateStr);
         });
       }
-      
+
       saveAndRender();
-      
-      // Show success message with clear explanation of what happened
+
       showAlert(`
-        <div class="flex items-center">
+        <div class="flex items-start">
           <i class="fas fa-check-circle h-6 w-6 text-green-500 mr-2" aria-hidden="true"></i>
           <div>
             <span class="font-medium">Inventory Complete!</span>
-            <p>Shelf <span class="font-mono font-medium">${shelf}</span> was updated from ${formatDateDisplay(oldDate)} to ${formatDateDisplay(newDate)}.</p>
-            <p class="mt-1 text-xs text-gray-600">The date was set to ensure this shelf appears at the end of the list.</p>
+            <p>Shelf <span class="font-mono font-medium">${shelf}</span> was updated from ${formatDateDisplay(oldDate)} to ${formatDateDisplay(nextDateStr)}.</p>
+            <p class="mt-1 text-xs text-gray-600">The date was advanced by the rhythmus interval (${formatRhythmusDisplay(rhythmus)}).</p>
             ${linkedShelves.length > 0 ? `<p class="mt-1 text-sm">Also updated ${linkedShelves.length} linked ${linkedShelves.length === 1 ? 'shelf' : 'shelves'}.</p>` : ''}
           </div>
         </div>
@@ -1913,6 +2144,14 @@ const setupShelfForm = (formElement) => {
     const shelf = shelfInput.value.trim().toUpperCase();
     const date = dateInput.value;
     
+    // Rhythmus fields
+    const rhythmusIntervalInput = formElement.querySelector('#rhythmus-interval, #mobile-rhythmus-interval');
+    const rhythmusUnitSelect = formElement.querySelector('#rhythmus-unit, #mobile-rhythmus-unit');
+    const rhythmus = {
+      interval: Number(rhythmusIntervalInput?.value) || DEFAULT_RHYTHMUS.interval,
+      unit: rhythmusUnitSelect?.value || DEFAULT_RHYTHMUS.unit
+    };
+    
     try {
       // Additional validation for whitespace-only input
       // This shouldn't be needed now due to the check above, but keeping as a safeguard
@@ -1929,19 +2168,20 @@ const setupShelfForm = (formElement) => {
             <i class="fas fa-exclamationtriangle h-6 w-6 text-yellow-500 mr-2 flex-shrink-0" aria-hidden="true"></i>
             <div>
               <span class="font-medium">Duplicate Entry!</span>
-              <p>Shelf <span class="font-mono font-medium">${shelf}</span> already exists with date ${formatDateDisplay(shelves[shelf])}.</p>
+              <p>Shelf <span class="font-mono font-medium">${shelf}</span> already exists with date ${formatDateDisplay(getShelfDate(shelf))}.</p>
               <p class="mt-2">Would you like to update it to ${formatDateDisplay(date)}?</p>
             </div>
           </div>
         `, { 
           html: true, 
           alertType: 'warning',
-         
           isConfirm: true,
           confirmText: 'Update',
           onConfirm: () => {
-            // Update the shelf with new date
-            shelves[shelf] = date;
+            // Update the shelf with new date and rhythmus
+            ensureShelfObject(shelf);
+            setShelfDate(shelf, date);
+            setShelfRhythmus(shelf, rhythmus);
             
             // Create a function to highlight and scroll after rendering
             const scrollToUpdatedRow = () => {
@@ -1990,7 +2230,7 @@ const setupShelfForm = (formElement) => {
       }
       
       // If shelf doesn't exist, proceed with adding it
-      shelves[shelf] = date;
+      shelves[shelf] = { date, rhythmus };
       
       // Add to recently added shelves list with timestamp
       recentlyAddedShelves.push({

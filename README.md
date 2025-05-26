@@ -13,6 +13,7 @@ ShelfTrack helps warehouse and retail staff efficiently manage inventory schedul
 - **Mobile Optimized** - Full functionality on tablets and smartphones
 - **Quick Completion** - Mark inventory as complete with a single tap
 - **Visual Status Indicators** - Color-coded system for inventory status
+- **QR/Barcode Scanning** - Quickly add or update shelves using device camera
 
 ## Technical Features
 - Built with modern JavaScript, Tailwind CSS, and DataTables
